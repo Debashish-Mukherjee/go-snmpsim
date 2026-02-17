@@ -155,9 +155,9 @@ GOOS=linux GOARCH=amd64 go build -o snmpsim-linux ./cmd/snmpsim
 2. **Import statements:** Added qualified imports
    ```go
    import (
-       "github.com/debashish/go-snmpsim/internal/agent"
-       "github.com/debashish/go-snmpsim/internal/store"
-       "github.com/debashish/go-snmpsim/internal/engine"
+       "github.com/debashish-mukherjee/go-snmpsim/internal/agent"
+       "github.com/debashish-mukherjee/go-snmpsim/internal/store"
+       "github.com/debashish-mukherjee/go-snmpsim/internal/engine"
    )
    ```
 3. **Type references:** Added package prefixes
@@ -307,7 +307,7 @@ examples/
 go install golang.org/x/tools/cmd/godoc@latest
 godoc -http=:6060
 
-# View at http://localhost:6060/pkg/github.com/debashish/go-snmpsim/
+# View at http://localhost:6060/pkg/github.com/debashish-mukherjee/go-snmpsim/
 ```
 
 ---

@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/debashish/go-snmpsim/internal/store"
+	"github.com/debashish-mukherjee/go-snmpsim/internal/store"
 	"github.com/gosnmp/gosnmp"
 )
 

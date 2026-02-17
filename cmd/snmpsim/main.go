@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/debashish/go-snmpsim/internal/engine"
+	"github.com/debashish-mukherjee/go-snmpsim/internal/engine"
 )
 
 func main() {

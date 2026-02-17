@@ -1,4 +1,4 @@
-module github.com/debashish/go-snmpsim
+module github.com/debashish-mukherjee/go-snmpsim
 
 go 1.21
 

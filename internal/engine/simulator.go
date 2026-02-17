@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/debashish/go-snmpsim/internal/agent"
-	"github.com/debashish/go-snmpsim/internal/store"
+	"github.com/debashish-mukherjee/go-snmpsim/internal/agent"
+	"github.com/debashish-mukherjee/go-snmpsim/internal/store"
 	"golang.org/x/sys/unix"
 )
 

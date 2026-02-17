@@ -3,7 +3,7 @@ package engine
 import (
 	"sync"
 
-	"github.com/debashish/go-snmpsim/internal/agent"
+	"github.com/debashish-mukherjee/go-snmpsim/internal/agent"
 )
 
 // PacketDispatcher routes incoming UDP packets to virtual agents

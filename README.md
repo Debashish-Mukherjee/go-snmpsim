@@ -22,7 +22,7 @@
 
 ```bash
 # Clone repository
-git clone https://github.com/debashish/go-snmpsim.git
+git clone https://github.com/debashish-mukherjee/go-snmpsim.git
 cd go-snmpsim
 
 # Build
@@ -226,7 +226,7 @@ wait
 
 ```bash
 # Clone and build
-git clone https://github.com/debashish/go-snmpsim.git
+git clone https://github.com/debashish-mukherjee/go-snmpsim.git
 cd go-snmpsim
 make build
 
@@ -299,9 +299,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📮 Contact
 
-- **Author**: Debashish Chakravarty
-- **GitHub**: [@debashish](https://github.com/debashish)
-- **Issues**: [Report bugs or request features](https://github.com/debashish/go-snmpsim/issues)
+- **Author**: Debashish Mukherjee
+- **GitHub**: [@debashish-mukherjee](https://github.com/debashish-mukherjee)
+- **Issues**: [Report bugs or request features](https://github.com/debashish-mukherjee/go-snmpsim/issues)
 
 ---
 

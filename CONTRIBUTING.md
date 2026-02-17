@@ -31,7 +31,7 @@ This project adheres to professional standards of conduct:
    ```
 3. **Add upstream remote**:
    ```bash
-   git remote add upstream https://github.com/debashish/go-snmpsim.git
+   git remote add upstream https://github.com/debashish-mukherjee/go-snmpsim.git
    ```
 
 ## Development Setup

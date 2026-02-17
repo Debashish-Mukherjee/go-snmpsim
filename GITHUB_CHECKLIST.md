@@ -260,12 +260,12 @@ Download pre-built binary from assets below.
 
 ### From Source
 ```bash
-go install github.com/debashish/go-snmpsim/cmd/snmpsim@latest
+go install github.com/debashish-mukherjee/go-snmpsim/cmd/snmpsim@latest
 ```
 
 ### Docker
 ```bash
-docker pull debashish/go-snmpsim:v1.0.0
+docker pull debashish-mukherjee/go-snmpsim:v1.0.0
 ```
 
 ## Quick Start
