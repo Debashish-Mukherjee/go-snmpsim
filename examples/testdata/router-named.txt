@@ -1,0 +1,107 @@
+# Cisco IOS Device - Named Format snmpwalk Output
+# Captured: Router with interfaces and IP routing
+# Format: snmpwalk -v 2c -c public router.example.com 1.3.6.1
+
+SNMPv2-MIB::sysDescr.0 = STRING "Cisco IOS XE Software, Version 17.03.01"
+SNMPv2-MIB::sysObjectID.0 = OID: SNMPv2-SMI::enterprises.9.9.46.1
+SNMPv2-MIB::sysUpTime.0 = Timeticks: (987654321) 114:15:43.21
+SNMPv2-MIB::sysContact.0 = STRING "network-admin@corp.example.com"
+SNMPv2-MIB::sysName.0 = STRING "router-prod-01.example.com"
+SNMPv2-MIB::sysLocation.0 = STRING "Data Center 1 - Rack 42"
+SNMPv2-MIB::sysServices.0 = INTEGER 78
+SNMPv2-MIB::sysORLastChange.0 = Timeticks: (500000) 57:46:40.00
+
+# Interface group
+SNMPv2-MIB::ifNumber.0 = INTEGER 6
+SNMPv2-MIB::ifIndex.1 = INTEGER 1
+SNMPv2-MIB::ifDescr.1 = STRING "GigabitEthernet0/0/0"
+SNMPv2-MIB::ifType.1 = INTEGER 6
+SNMPv2-MIB::ifMtu.1 = INTEGER 1500
+SNMPv2-MIB::ifSpeed.1 = INTEGER 1000000000
+SNMPv2-MIB::ifPhysAddress.1 = Hex-STRING: 00 11 22 33 44 55
+SNMPv2-MIB::ifAdminStatus.1 = INTEGER 1
+SNMPv2-MIB::ifOperStatus.1 = INTEGER 1
+SNMPv2-MIB::ifLastChange.1 = Timeticks: (100000) 11:36:40.00
+SNMPv2-MIB::ifInOctets.1 = Counter32: 987654321
+SNMPv2-MIB::ifInUcastPkts.1 = Counter32: 123456789
+SNMPv2-MIB::ifInNUcastPkts.1 = Counter32: 10000
+SNMPv2-MIB::ifInDiscards.1 = Counter32: 0
+SNMPv2-MIB::ifInErrors.1 = Counter32: 5
+SNMPv2-MIB::ifOutOctets.1 = Counter32: 876543210
+SNMPv2-MIB::ifOutUcastPkts.1 = Counter32: 98765432
+SNMPv2-MIB::ifOutNUcastPkts.1 = Counter32: 5000
+SNMPv2-MIB::ifOutDiscards.1 = Counter32: 0
+SNMPv2-MIB::ifOutErrors.1 = Counter32: 2
+
+SNMPv2-MIB::ifIndex.2 = INTEGER 2
+SNMPv2-MIB::ifDescr.2 = STRING "GigabitEthernet0/0/1"
+SNMPv2-MIB::ifType.2 = INTEGER 6
+SNMPv2-MIB::ifMtu.2 = INTEGER 1500
+SNMPv2-MIB::ifSpeed.2 = INTEGER 1000000000
+SNMPv2-MIB::ifPhysAddress.2 = Hex-STRING: 00 11 22 33 44 66
+SNMPv2-MIB::ifAdminStatus.2 = INTEGER 1
+SNMPv2-MIB::ifOperStatus.2 = INTEGER 1
+SNMPv2-MIB::ifInOctets.2 = Counter32: 456789123
+SNMPv2-MIB::ifInErrors.2 = Counter32: 3
+SNMPv2-MIB::ifOutOctets.2 = Counter32: 345678912
+SNMPv2-MIB::ifOutErrors.2 = Counter32: 1
+
+SNMPv2-MIB::ifIndex.3 = INTEGER 3
+SNMPv2-MIB::ifDescr.3 = STRING "Loopback0"
+SNMPv2-MIB::ifType.3 = INTEGER 24
+SNMPv2-MIB::ifMtu.3 = INTEGER 1500
+SNMPv2-MIB::ifSpeed.3 = INTEGER 4294967295
+SNMPv2-MIB::ifAdminStatus.3 = INTEGER 1
+SNMPv2-MIB::ifOperStatus.3 = INTEGER 1
+SNMPv2-MIB::ifInOctets.3 = Counter32: 0
+SNMPv2-MIB::ifOutOctets.3 = Counter32: 0
+
+# IP group
+SNMPv2-MIB::ipForwarding.0 = INTEGER 1
+SNMPv2-MIB::ipDefaultTTL.0 = INTEGER 64
+SNMPv2-MIB::ipInReceives.0 = Counter32: 10000000
+SNMPv2-MIB::ipInHdrErrors.0 = Counter32: 100
+SNMPv2-MIB::ipInAddrErrors.0 = Counter32: 50
+SNMPv2-MIB::ipForwDatagrams.0 = Counter32: 5000000
+SNMPv2-MIB::ipInUnknownProtos.0 = Counter32: 10
+SNMPv2-MIB::ipInDiscards.0 = Counter32: 0
+SNMPv2-MIB::ipInDelivers.0 = Counter32: 5000000
+
+# IP routing table
+SNMPv2-MIB::ipAdEntAddr.192.168.1.1 = IpAddress: 192.168.1.1
+SNMPv2-MIB::ipAdEntIfIndex.192.168.1.1 = INTEGER 1
+SNMPv2-MIB::ipAdEntNetMask.192.168.1.1 = IpAddress: 255.255.255.0
+SNMPv2-MIB::ipAdEntBcastAddr.192.168.1.1 = INTEGER 1
+
+SNMPv2-MIB::ipAdEntAddr.10.0.0.1 = IpAddress: 10.0.0.1
+SNMPv2-MIB::ipAdEntIfIndex.10.0.0.1 = INTEGER 2
+SNMPv2-MIB::ipAdEntNetMask.10.0.0.1 = IpAddress: 255.255.255.0
+SNMPv2-MIB::ipAdEntBcastAddr.10.0.0.1 = INTEGER 1
+
+# TCP group
+SNMPv2-MIB::tcpRtoAlgorithm.0 = INTEGER 4
+SNMPv2-MIB::tcpRtoMin.0 = INTEGER 200
+SNMPv2-MIB::tcpRtoMax.0 = INTEGER 120000
+SNMPv2-MIB::tcpMaxConn.0 = INTEGER -1
+SNMPv2-MIB::tcpActiveOpens.0 = Counter32: 50000
+SNMPv2-MIB::tcpPassiveOpens.0 = Counter32: 100000
+SNMPv2-MIB::tcpAttemptFails.0 = Counter32: 150
+SNMPv2-MIB::tcpEstabResets.0 = Counter32: 200
+SNMPv2-MIB::tcpCurrEstab.0 = INTEGER 456
+SNMPv2-MIB::tcpInSegs.0 = Counter32: 50000000
+SNMPv2-MIB::tcpOutSegs.0 = Counter32: 45000000
+SNMPv2-MIB::tcpRetransSegs.0 = Counter32: 10000
+
+# UDP group
+SNMPv2-MIB::udpInDatagrams.0 = Counter32: 1000000
+SNMPv2-MIB::udpNoPorts.0 = Counter32: 500
+SNMPv2-MIB::udpInErrors.0 = Counter32: 10
+SNMPv2-MIB::udpOutDatagrams.0 = Counter32: 800000
+
+# SNMP group
+SNMPv2-MIB::snmpInTotalRqvdPdus.0 = Counter32: 100000
+SNMPv2-MIB::snmpInTotalInvalidMsgs.0 = Counter32: 500
+SNMPv2-MIB::snmpOutTotalReqPdus.0 = Counter32: 50000
+SNMPv2-MIB::snmpOutTotalRespPdus.0 = Counter32: 95000
+SNMPv2-MIB::snmpOutGenErrs.0 = Counter32: 50
+SNMPv2-MIB::snmpInASNParseErrs.0 = Counter32: 100

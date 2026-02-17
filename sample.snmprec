@@ -1,0 +1,198 @@
+# SNMP Simulator Sample Record File (.snmprec)
+# Format: OID|TYPE|VALUE
+# This file demonstrates the .snmprec format for loading custom OIDs
+# Uncomment and modify the entries below to customize device behavior
+
+# ============================================================
+# SYSTEM GROUP (1.3.6.1.2.1.1)
+# ============================================================
+
+# System description
+1.3.6.1.2.1.1.1.0|octetstring|Simulated Enterprise Switch
+
+# System object ID (vendor specific)
+1.3.6.1.2.1.1.2.0|objectidentifier|1.3.6.1.4.1.9.9.46.1
+
+# System uptime (in timeticks - 100ths of seconds)
+1.3.6.1.2.1.1.3.0|timeticks|100000000
+
+# System contact
+1.3.6.1.2.1.1.4.0|octetstring|Network Admin - admin@company.com
+
+# System name (device name)
+1.3.6.1.2.1.1.5.0|octetstring|switch.company.local
+
+# System location
+1.3.6.1.2.1.1.6.0|octetstring|Data Center - Building A - Rack 42
+
+# System services (bitmap: bit 0=physical, 1=datalink, 2=internet, 3=end-to-end, 4=application)
+1.3.6.1.2.1.1.7.0|integer|72
+
+# System group last change
+1.3.6.1.2.1.1.8.0|timeticks|100
+
+# ============================================================
+# INTERFACES GROUP (1.3.6.1.2.1.2)
+# ============================================================
+
+# Number of interfaces
+1.3.6.1.2.1.2.1.0|integer|4
+
+# Interface 1: GigabitEthernet 0/0/1
+1.3.6.1.2.1.2.2.1.1.1|integer|1
+1.3.6.1.2.1.2.2.1.2.1|octetstring|GigabitEthernet0/0/1
+1.3.6.1.2.1.2.2.1.3.1|integer|6
+1.3.6.1.2.1.2.2.1.4.1|integer|1500
+1.3.6.1.2.1.2.2.1.5.1|integer|1000000000
+1.3.6.1.2.1.2.2.1.8.1|integer|1
+1.3.6.1.2.1.2.2.1.10.1|counter32|5000000
+
+# Interface 2: GigabitEthernet 0/0/2
+1.3.6.1.2.1.2.2.1.1.2|integer|2
+1.3.6.1.2.1.2.2.1.2.2|octetstring|GigabitEthernet0/0/2
+1.3.6.1.2.1.2.2.1.3.2|integer|6
+1.3.6.1.2.1.2.2.1.4.2|integer|1500
+1.3.6.1.2.1.2.2.1.5.2|integer|1000000000
+1.3.6.1.2.1.2.2.1.8.2|integer|1
+1.3.6.1.2.1.2.2.1.10.2|counter32|3500000
+
+# Interface 3: GigabitEthernet 0/0/3
+1.3.6.1.2.1.2.2.1.1.3|integer|3
+1.3.6.1.2.1.2.2.1.2.3|octetstring|GigabitEthernet0/0/3
+1.3.6.1.2.1.2.2.1.3.3|integer|6
+1.3.6.1.2.1.2.2.1.4.3|integer|1500
+1.3.6.1.2.1.2.2.1.5.3|integer|1000000000
+1.3.6.1.2.1.2.2.1.8.3|integer|1
+1.3.6.1.2.1.2.2.1.10.3|counter32|1200000
+
+# Interface 4: Management interface
+1.3.6.1.2.1.2.2.1.1.4|integer|4
+1.3.6.1.2.1.2.2.1.2.4|octetstring|Management0/0
+1.3.6.1.2.1.2.2.1.3.4|integer|6
+1.3.6.1.2.1.2.2.1.4.4|integer|1500
+1.3.6.1.2.1.2.2.1.5.4|integer|100000000
+1.3.6.1.2.1.2.2.1.8.4|integer|1
+1.3.6.1.2.1.2.2.1.10.4|counter32|500000
+
+# ============================================================
+# IP GROUP (1.3.6.1.2.1.4)
+# ============================================================
+
+# IP forwarding enabled
+1.3.6.1.2.1.4.1.0|integer|1
+
+# IP default TTL
+1.3.6.1.2.1.4.2.0|integer|64
+
+# IP input datagrams received
+1.3.6.1.2.1.4.3.0|counter32|10000000
+
+# IP input header errors
+1.3.6.1.2.1.4.4.0|counter32|100
+
+# IP routing table entry: 192.168.1.0/24
+1.3.6.1.2.1.4.20.1.1.192.168.1.1|ipaddress|192.168.1.1
+1.3.6.1.2.1.4.20.1.2.192.168.1.1|integer|1
+1.3.6.1.2.1.4.20.1.3.192.168.1.1|octetstring|255.255.255.0
+1.3.6.1.2.1.4.20.1.4.192.168.1.1|integer|1
+
+# IP routing table entry: 10.0.0.0/8
+1.3.6.1.2.1.4.20.1.1.10.0.0.1|ipaddress|10.0.0.1
+1.3.6.1.2.1.4.20.1.2.10.0.0.1|integer|1
+1.3.6.1.2.1.4.20.1.3.10.0.0.1|octetstring|255.0.0.0
+1.3.6.1.2.1.4.20.1.4.10.0.0.1|integer|1
+
+# ============================================================
+# TCP GROUP (1.3.6.1.2.1.6)
+# ============================================================
+
+# TCP RTO algorithm used
+1.3.6.1.2.1.6.1.0|integer|4
+
+# TCP RTO minimum
+1.3.6.1.2.1.6.2.0|integer|200
+
+# TCP RTO maximum
+1.3.6.1.2.1.6.3.0|integer|120000
+
+# TCP maximum connections
+1.3.6.1.2.1.6.4.0|integer|1024
+
+# TCP active opens
+1.3.6.1.2.1.6.5.0|counter32|5000
+
+# TCP passive opens
+1.3.6.1.2.1.6.6.0|counter32|100
+
+# TCP failed connection attempts
+1.3.6.1.2.1.6.7.0|counter32|50
+
+# TCP established resets
+1.3.6.1.2.1.6.8.0|counter32|10
+
+# TCP current state: LISTEN connections
+1.3.6.1.2.1.6.9.0|integer|20
+
+# TCP input packets
+1.3.6.1.2.1.6.10.0|counter32|5000000
+
+# TCP output packets
+1.3.6.1.2.1.6.11.0|counter32|4800000
+
+# ============================================================
+# UDP GROUP (1.3.6.1.2.1.7)
+# ============================================================
+
+# UDP input datagrams
+1.3.6.1.2.1.7.1.0|counter32|1000000
+
+# UDP output datagrams
+1.3.6.1.2.1.7.2.0|counter32|950000
+
+# UDP input errors
+1.3.6.1.2.1.7.3.0|counter32|50
+
+# UDP ports with no destination
+1.3.6.1.2.1.7.4.0|counter32|100
+
+# ============================================================
+# SNMP GROUP (1.3.6.1.2.1.11)
+# ============================================================
+
+# SNMP packets received
+1.3.6.1.2.1.11.1.0|counter32|100000
+
+# SNMP proxy drops
+1.3.6.1.2.1.11.2.0|counter32|0
+
+# SNMP trap links
+1.3.6.1.2.1.11.3.0|integer|5
+
+# SNMP trap PDU packets
+1.3.6.1.2.1.11.4.0|counter32|500
+
+# SNMP silent drops (no manager)
+1.3.6.1.2.1.11.5.0|counter32|10
+
+# SNMP proxy drops
+1.3.6.1.2.1.11.6.0|counter32|0
+
+# ============================================================
+# CUSTOM ENTERPRISE VENDOR OIDs (1.3.6.1.4.1.XXXXX)
+# Replace XXXXX with your actual enterprise number
+# ============================================================
+
+# CPU utilization (example: Cisco UCS - 1.3.6.1.4.1.9.9.46.1.4.1.1.0)
+1.3.6.1.4.1.9.9.46.1.4.1.1.0|integer|45
+
+# Memory utilization
+1.3.6.1.4.1.9.9.46.1.3.1.1.0|integer|67
+
+# Temperature sensor (in Celsius)
+1.3.6.1.4.1.9.9.46.1.4.1.2.0|integer|32
+
+# Power supply status (1=normal, 2=warning, 3=critical)
+1.3.6.1.4.1.9.9.46.1.6.1.1.0|integer|1
+
+# Fan status (1=normal, 2=warning, 3=critical)
+1.3.6.1.4.1.9.9.46.1.6.1.2.0|integer|1

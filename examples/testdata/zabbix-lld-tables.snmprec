@@ -1,0 +1,140 @@
+# Zabbix-Optimized SNMP Table Data
+# Demonstrates proper table structures for Zabbix 7.4 LLD discovery
+# Uses template syntax for efficient configuration
+
+# System group - base OIDs (non-table)
+1.3.6.1.2.1.1.1.0|octetstring|Zabbix Test Device
+1.3.6.1.2.1.1.2.0|objectidentifier|1.3.6.1.4.1.8072.3.2.10
+1.3.6.1.2.1.1.3.0|timeticks|123456789
+1.3.6.1.2.1.1.4.0|octetstring|zabbix-admin@example.com
+1.3.6.1.2.1.1.5.0|octetstring|zabbix-sim-01
+1.3.6.1.2.1.1.6.0|octetstring|Test Lab
+1.3.6.1.2.1.1.7.0|integer|72
+
+# Interfaces Table - 1.3.6.1.2.1.2.2
+# IfTable structure: 1.3.6.1.2.1.2.2.1.COLUMN.INDEX
+# Used by Zabbix for interface discovery via LLD
+
+# ifNumber (number of interfaces)
+1.3.6.1.2.1.2.1.0|integer|4
+
+# ifTable with template expansion for 4 interfaces
+# ifDescr (1.3.6.1.2.1.2.2.1.2)
+1.3.6.1.2.1.2.2.1.2|octetstring|eth0|#1-4
+
+# ifType (1.3.6.1.2.1.2.2.1.3) - network type
+1.3.6.1.2.1.2.2.1.3|integer|6|#1-4
+
+# ifMtu (1.3.6.1.2.1.2.2.1.4) - MTU size
+1.3.6.1.2.1.2.2.1.4|integer|1500|#1-4
+
+# ifSpeed (1.3.6.1.2.1.2.2.1.5) - link speed
+1.3.6.1.2.1.2.2.1.5|integer|1000000000|#1-4
+
+# ifPhysAddress (1.3.6.1.2.1.2.2.1.6)
+1.3.6.1.2.1.2.2.1.6|octetstring|00:11:22:33:44:00|#1-4
+
+# ifAdminStatus (1.3.6.1.2.1.2.2.1.7) - 1=up, 2=down, 3=testing
+1.3.6.1.2.1.2.2.1.7|integer|1|#1-4
+
+# ifOperStatus (1.3.6.1.2.1.2.2.1.8) - operational status
+1.3.6.1.2.1.2.2.1.8|integer|1|#1-4
+
+# ifLastChange (1.3.6.1.2.1.2.2.1.9)
+1.3.6.1.2.1.2.2.1.9|timeticks|0|#1-4
+
+# ifInOctets (1.3.6.1.2.1.2.2.1.10) - bytes in
+1.3.6.1.2.1.2.2.1.10|counter32|1000000000|#1-4
+
+# ifInUcastPkts (1.3.6.1.2.1.2.2.1.11) - unicast packets in
+1.3.6.1.2.1.2.2.1.11|counter32|500000000|#1-4
+
+# ifInNUcastPkts (1.3.6.1.2.1.2.2.1.12) - non-unicast in (deprecated)
+1.3.6.1.2.1.2.2.1.12|counter32|10000000|#1-4
+
+# ifInDiscards (1.3.6.1.2.1.2.2.1.13) - discarded in
+1.3.6.1.2.1.2.2.1.13|counter32|1000|#1-4
+
+# ifInErrors (1.3.6.1.2.1.2.2.1.14) - errors in
+1.3.6.1.2.1.2.2.1.14|counter32|100|#1-4
+
+# ifInUnknownProtos (1.3.6.1.2.1.2.2.1.15)
+1.3.6.1.2.1.2.2.1.15|counter32|0|#1-4
+
+# ifOutOctets (1.3.6.1.2.1.2.2.1.16) - bytes out
+1.3.6.1.2.1.2.2.1.16|counter32|2000000000|#1-4
+
+# ifOutUcastPkts (1.3.6.1.2.1.2.2.1.17) - packets out
+1.3.6.1.2.1.2.2.1.17|counter32|800000000|#1-4
+
+# ifOutNUcastPkts (1.3.6.1.2.1.2.2.1.18) - non-unicast out
+1.3.6.1.2.1.2.2.1.18|counter32|20000000|#1-4
+
+# ifOutDiscards (1.3.6.1.2.1.2.2.1.19) - discarded out
+1.3.6.1.2.1.2.2.1.19|counter32|500|#1-4
+
+# ifOutErrors (1.3.6.1.2.1.2.2.1.20) - errors out
+1.3.6.1.2.1.2.2.1.20|counter32|50|#1-4
+
+# ifOutQLen (1.3.6.1.2.1.2.2.1.21) - output queue length
+1.3.6.1.2.1.2.2.1.21|counter32|0|#1-4
+
+# ifSpecific (1.3.6.1.2.1.2.2.1.22)
+1.3.6.1.2.1.2.2.1.22|objectidentifier|0.0|#1-4
+
+# IP Address Table - for IP routing
+# Demonstrates table with non-sequential indices (IP addresses)
+1.3.6.1.2.1.4.20.1.1.192.168.1.1|ipaddress|192.168.1.1
+1.3.6.1.2.1.4.20.1.2.192.168.1.1|integer|1
+1.3.6.1.2.1.4.20.1.3.192.168.1.1|octetstring|255.255.255.0
+1.3.6.1.2.1.4.20.1.4.192.168.1.1|integer|1
+1.3.6.1.2.1.4.20.1.5.192.168.1.1|integer|0
+
+1.3.6.1.2.1.4.20.1.1.10.0.0.1|ipaddress|10.0.0.1
+1.3.6.1.2.1.4.20.1.2.10.0.0.1|integer|0
+1.3.6.1.2.1.4.20.1.3.10.0.0.1|octetstring|255.0.0.0
+1.3.6.1.2.1.4.20.1.4.10.0.0.1|integer|1
+1.3.6.1.2.1.4.20.1.5.10.0.0.1|integer|0
+
+1.3.6.1.2.1.4.20.1.1.172.16.0.1|ipaddress|172.16.0.1
+1.3.6.1.2.1.4.20.1.2.172.16.0.1|integer|0
+1.3.6.1.2.1.4.20.1.3.172.16.0.1|octetstring|255.255.0.0
+1.3.6.1.2.1.4.20.1.4.172.16.0.1|integer|1
+1.3.6.1.2.1.4.20.1.5.172.16.0.1|integer|0
+
+# TCP Connections Table - ipNetToMediaTable
+# Shows ARP/neighbor entries (for device discovery)
+1.3.6.1.2.1.4.22.1.1.0.192.168.1.100|integer|0
+1.3.6.1.2.1.4.22.1.2.0.192.168.1.100|octetstring|00:11:22:33:44:55
+1.3.6.1.2.1.4.22.1.3.0.192.168.1.100|integer|4
+1.3.6.1.2.1.4.22.1.4.0.192.168.1.100|integer|0
+
+1.3.6.1.2.1.4.22.1.1.0.192.168.1.200|integer|0
+1.3.6.1.2.1.4.22.1.2.0.192.168.1.200|octetstring|00:11:22:33:44:66
+1.3.6.1.2.1.4.22.1.3.0.192.168.1.200|integer|4
+1.3.6.1.2.1.4.22.1.4.0.192.168.1.200|integer|0
+
+# TCP Counters
+1.3.6.1.2.1.6.1.0|integer|1
+1.3.6.1.2.1.6.9.0|integer|10
+1.3.6.1.2.1.6.10.0|counter32|100000
+1.3.6.1.2.1.6.11.0|counter32|500
+1.3.6.1.2.1.6.12.0|counter32|100
+1.3.6.1.2.1.6.13.0|counter32|50
+1.3.6.1.2.1.6.14.0|counter32|50000
+1.3.6.1.2.1.6.15.0|counter32|1000
+
+# UDP Counters
+1.3.6.1.2.1.7.1.0|counter32|500000
+1.3.6.1.2.1.7.2.0|counter32|250000
+1.3.6.1.2.1.7.3.0|counter32|100
+1.3.6.1.2.1.7.4.0|counter32|50
+
+# SNMP Counters (important for Zabbix health check)
+1.3.6.1.2.1.11.1.0|counter32|10000
+1.3.6.1.2.1.11.2.0|counter32|1000
+1.3.6.1.2.1.11.3.0|counter32|0
+1.3.6.1.2.1.11.4.0|counter32|0
+1.3.6.1.2.1.11.5.0|counter32|500
+1.3.6.1.2.1.11.6.0|counter32|100
+1.3.6.1.2.1.11.30.0|counter32|5

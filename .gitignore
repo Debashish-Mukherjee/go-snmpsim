@@ -1,0 +1,41 @@
+# Build artifacts
+/snmpsim
+/go-snmpsim
+*.exe
+*.dll
+*.so
+*.dylib
+build/
+dist/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test/Coverage
+*.out
+*.test
+coverage.html
+*.prof
+
+# Data/Config
+*.log
+*.snmprec.local
+data/
+logs/
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Dependencies (vendoring is handled by go.mod)
+vendor/
+
+# Temporary
+tmp/
+temp/
+old/

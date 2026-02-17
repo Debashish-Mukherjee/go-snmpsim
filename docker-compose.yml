@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  snmpsim:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: go-snmpsim:latest
+    container_name: snmpsim
+    hostname: snmpsim
+    
+    # Port mapping for complete port range
+    ports:
+      - "20000-30000:20000-30000/udp"
+    
+    # Environment setup
+    environment:
+      - GOMAXPROCS=8
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 2G
+        reservations:
+          cpus: '2'
+          memory: 1G
+    
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "nc", "-zv", "localhost", "20000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    
+    # Command with arguments
+    command: [
+      "-port-start=20000",
+      "-port-end=30000",
+      "-devices=1000",
+      "-listen=0.0.0.0"
+    ]
+
+  # Optional: Management/debugging container
+  snmpsim-client:
+    image: alpine:latest
+    container_name: snmpsim-client
+    depends_on:
+      snmpsim:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    stdin_open: true
+    tty: true
+    command: -c "apk add --no-cache snmp-tools net-tools && exec sh"
+    link:
+      - snmpsim

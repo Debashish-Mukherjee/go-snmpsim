@@ -1,0 +1,71 @@
+# Device-Specific OID Mapping Test File
+# Demonstrates @port syntax for port-specific device overrides
+# Priority: port-specific > device-specific > default
+
+# Default system OIDs (applies to all devices/ports)
+1.3.6.1.2.1.1.1.0|octetstring|Multi-Device SNMP Simulator
+1.3.6.1.2.1.1.3.0|timeticks|123456789
+1.3.6.1.2.1.1.4.0|octetstring|admin@lab.local
+
+# Default system name (applies to all)
+1.3.6.1.2.1.1.5.0|octetstring|default-device
+
+# Port-specific overrides (highest priority)
+# These will override default values for specific ports only
+1.3.6.1.2.1.1.5.0|octetstring|port-20000-device@20000
+1.3.6.1.2.1.1.6.0|octetstring|Lab for Port 20000@20000
+1.3.6.1.2.1.1.2.0|objectidentifier|1.3.6.1.4.1.9.9.46.1@20000
+
+# Another port-specific device
+1.3.6.1.2.1.1.5.0|octetstring|port-20001-device@20001
+1.3.6.1.2.1.1.6.0|octetstring|Lab for Port 20001@20001
+1.3.6.1.2.1.1.2.0|objectidentifier|1.3.6.1.4.1.9.9.25.1@20001
+
+# Device-specific overrides (medium priority, if not port-specific)
+# Format: value@device-id
+1.3.6.1.2.1.1.5.0|octetstring|device-router-1@device-router-1
+1.3.6.1.2.1.1.6.0|octetstring|Production Router@device-router-1
+1.3.6.1.2.1.1.2.0|objectidentifier|1.3.6.1.4.1.9.9.46.1@device-router-1
+
+# Another device
+1.3.6.1.2.1.1.5.0|octetstring|device-switch-1@device-switch-1
+1.3.6.1.2.1.1.6.0|octetstring|Production Switch@device-switch-1
+1.3.6.1.2.1.1.2.0|objectidentifier|1.3.6.1.4.1.9.9.12.3.1@device-switch-1
+
+# Interface OIDs with port-specific customization
+1.3.6.1.2.1.2.1.0|integer|2
+1.3.6.1.2.1.2.2.1.1.1|integer|1
+1.3.6.1.2.1.2.2.1.2.1|octetstring|eth0
+1.3.6.1.2.1.2.2.1.5.1|integer|1000000000
+
+1.3.6.1.2.1.2.2.1.1.2|integer|2
+1.3.6.1.2.1.2.2.1.2.2|octetstring|eth1
+1.3.6.1.2.1.2.2.1.5.2|integer|1000000000
+
+# Port-specific interface naming
+1.3.6.1.2.1.2.2.1.2.1|octetstring|GigabitEthernet0/0/0@20000
+1.3.6.1.2.1.2.2.1.5.1|integer|10000000000@20000
+
+1.3.6.1.2.1.2.2.1.2.1|octetstring|Management-Port@20001
+1.3.6.1.2.1.2.2.1.5.1|integer|100000000@20001
+
+# IP configuration with device-specific values
+1.3.6.1.2.1.4.1.0|integer|1
+1.3.6.1.2.1.4.20.1.1.192.168.1.1|ipaddress|192.168.1.1
+
+# Port 20000 uses different IP
+1.3.6.1.2.1.4.20.1.1.10.0.0.1|ipaddress|10.0.0.1@20000
+
+# Device-specific IPs
+1.3.6.1.2.1.4.20.1.1.172.16.1.1|ipaddress|172.16.1.1@device-router-1
+1.3.6.1.2.1.4.20.1.1.172.16.2.1|ipaddress|172.16.2.1@device-switch-1
+
+# TCP counters with port-specific values
+1.3.6.1.2.1.6.10.0|counter32|1000
+1.3.6.1.2.1.6.10.0|counter32|5000@20000
+1.3.6.1.2.1.6.10.0|counter32|2000@20001
+
+# UDP counters
+1.3.6.1.2.1.7.1.0|counter32|100000
+1.3.6.1.2.1.7.1.0|counter32|500000@20000
+1.3.6.1.2.1.7.1.0|counter32|200000@device-router-1

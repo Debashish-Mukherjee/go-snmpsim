@@ -1,0 +1,116 @@
+# Large-Scale Zabbix LLD Test File
+# Demonstrates 48-port network device for stress testing
+# Optimized for Zabbix 7.4+ LLD discovery with <100ms response time
+
+# System Group
+1.3.6.1.2.1.1.1.0|octetstring|48-Port Gigabit Switch - Zabbix LLD Test
+1.3.6.1.2.1.1.2.0|objectidentifier|1.3.6.1.4.1.9.1.797
+1.3.6.1.2.1.1.3.0|timeticks|1234567890
+1.3.6.1.2.1.1.4.0|octetstring|noc@company.com
+1.3.6.1.2.1.1.5.0|octetstring|zabbix-sw-core-01
+1.3.6.1.2.1.1.6.0|octetstring|Data Center 1
+1.3.6.1.2.1.1.7.0|integer|72
+
+# Interfaces - 48 ports using template syntax
+# This will expand to 48 x 22 columns = 1,056 OID entries
+1.3.6.1.2.1.2.1.0|integer|48
+
+# Interface Table (1.3.6.1.2.1.2.2.1)
+# Column 2: ifDescr
+1.3.6.1.2.1.2.2.1.2|octetstring|GigabitEthernet0/0/1|#1-48
+
+# Column 3: ifType (6 = ethernetCsmacd)
+1.3.6.1.2.1.2.2.1.3|integer|6|#1-48
+
+# Column 4: ifMtu
+1.3.6.1.2.1.2.2.1.4|integer|1500|#1-48
+
+# Column 5: ifSpeed (1Gbps = 1000000000 bps)
+1.3.6.1.2.1.2.2.1.5|integer|1000000000|#1-48
+
+# Column 6: ifPhysAddress (MAC addresses - simplify for testing)
+1.3.6.1.2.1.2.2.1.6|octetstring|00:1A:2B:3C:4D:01|#1-48
+
+# Column 7: ifAdminStatus (1=up, 2=down, 3=testing)
+1.3.6.1.2.1.2.2.1.7|integer|1|#1-48
+
+# Column 8: ifOperStatus (1=up)
+1.3.6.1.2.1.2.2.1.8|integer|1|#1-48
+
+# Column 9: ifLastChange
+1.3.6.1.2.1.2.2.1.9|timeticks|12345|#1-48
+
+# Column 10: ifInOctets (incoming bytes)
+1.3.6.1.2.1.2.2.1.10|counter32|1000000000|#1-48
+
+# Column 11: ifInUcastPkts (unicast packets in)
+1.3.6.1.2.1.2.2.1.11|counter32|500000000|#1-48
+
+# Column 12: ifInNUcastPkts (non-unicast packets in)
+1.3.6.1.2.1.2.2.1.12|counter32|10000000|#1-48
+
+# Column 13: ifInDiscards
+1.3.6.1.2.1.2.2.1.13|counter32|1000|#1-48
+
+# Column 14: ifInErrors
+1.3.6.1.2.1.2.2.1.14|counter32|100|#1-48
+
+# Column 15: ifInUnknownProtos
+1.3.6.1.2.1.2.2.1.15|counter32|0|#1-48
+
+# Column 16: ifOutOctets (outgoing bytes)
+1.3.6.1.2.1.2.2.1.16|counter32|2000000000|#1-48
+
+# Column 17: ifOutUcastPkts
+1.3.6.1.2.1.2.2.1.17|counter32|800000000|#1-48
+
+# Column 18: ifOutNUcastPkts
+1.3.6.1.2.1.2.2.1.18|counter32|20000000|#1-48
+
+# Column 19: ifOutDiscards
+1.3.6.1.2.1.2.2.1.19|counter32|500|#1-48
+
+# Column 20: ifOutErrors
+1.3.6.1.2.1.2.2.1.20|counter32|50|#1-48
+
+# Column 21: ifOutQLen (output queue)
+1.3.6.1.2.1.2.2.1.21|counter32|0|#1-48
+
+# Column 22: ifSpecific
+1.3.6.1.2.1.2.2.1.22|objectidentifier|0.0|#1-48
+
+# VLAN Table (simplified - enterprise MIB simulation)
+# Demonstrates indexed table for VLAN discovery
+1.3.6.1.2.1.17.7.1.4.3.1.1.100|integer|100
+1.3.6.1.2.1.17.7.1.4.3.1.2.100|integer|1
+1.3.6.1.2.1.17.7.1.4.3.1.5.100|octetstring|Production
+
+1.3.6.1.2.1.17.7.1.4.3.1.1.200|integer|200
+1.3.6.1.2.1.17.7.1.4.3.1.2.200|integer|1
+1.3.6.1.2.1.17.7.1.4.3.1.5.200|octetstring|Management
+
+1.3.6.1.2.1.17.7.1.4.3.1.1.300|integer|300
+1.3.6.1.2.1.17.7.1.4.3.1.2.300|integer|1
+1.3.6.1.2.1.17.7.1.4.3.1.5.300|octetstring|Storage
+
+# IP Addresses (typical for switches with management)
+1.3.6.1.2.1.4.20.1.1.192.168.1.254|ipaddress|192.168.1.254
+1.3.6.1.2.1.4.20.1.2.192.168.1.254|integer|1
+1.3.6.1.2.1.4.20.1.3.192.168.1.254|octetstring|255.255.255.0
+
+# TCP Stats
+1.3.6.1.2.1.6.9.0|integer|50
+1.3.6.1.2.1.6.10.0|counter32|1000000
+1.3.6.1.2.1.6.11.0|counter32|5000
+1.3.6.1.2.1.6.12.0|counter32|100
+
+# UDP Stats
+1.3.6.1.2.1.7.1.0|counter32|500000
+1.3.6.1.2.1.7.2.0|counter32|250000
+
+# SNMP Stats (critical for Zabbix health)
+1.3.6.1.2.1.11.1.0|counter32|100000
+1.3.6.1.2.1.11.2.0|counter32|10000
+1.3.6.1.2.1.11.3.0|counter32|0
+1.3.6.1.2.1.11.4.0|counter32|0
+1.3.6.1.2.1.11.30.0|counter32|50

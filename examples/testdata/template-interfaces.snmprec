@@ -1,0 +1,44 @@
+# Phase 2 Template Test File - Interfaces with Templates
+# Format: OID|TYPE|VALUE|#RANGE
+# This file demonstrates 48 interfaces in just 3 lines of config!
+
+# System group (regular entries)
+1.3.6.1.2.1.1.1.0|octetstring|Template Test Switch
+1.3.6.1.2.1.1.5.0|octetstring|template-switch-01
+1.3.6.1.2.1.2.1.0|integer|48
+
+# Interface templates - each line expands to 48 OID entries!
+# Template: Replicate this OID value for indices 1-48
+1.3.6.1.2.1.2.2.1.3|integer|6|#1-48
+1.3.6.1.2.1.2.2.1.4|integer|1500|#1-48
+1.3.6.1.2.1.2.2.1.5|integer|1000000000|#1-48
+1.3.6.1.2.1.2.2.1.7|integer|1|#1-48
+1.3.6.1.2.1.2.2.1.8|integer|1|#1-48
+
+# Individual interface descriptions (will override template if full OID provided)
+# Regular entries for specific OIDs if you need custom values
+1.3.6.1.2.1.2.2.1.2.1|octetstring|Ethernet1
+1.3.6.1.2.1.2.2.1.2.2|octetstring|Ethernet2
+1.3.6.1.2.1.2.2.1.2.3|octetstring|Ethernet3
+1.3.6.1.2.1.2.2.1.2.4|octetstring|Ethernet4
+1.3.6.1.2.1.2.2.1.2.5|octetstring|Ethernet5
+
+# Counter templates for all 48 interfaces
+1.3.6.1.2.1.2.2.1.10|counter32|1000000|#1-48
+1.3.6.1.2.1.2.2.1.16|counter32|500000|#1-48
+1.3.6.1.2.1.2.2.1.20|counter32|0|#1-48
+
+# IP group
+1.3.6.1.2.1.4.1.0|integer|1
+1.3.6.1.2.1.4.20.1.1.192.168.1.1|ipaddress|192.168.1.1
+1.3.6.1.2.1.4.20.1.3.192.168.1.1|octetstring|255.255.255.0
+
+# TCP/UDP (regular entries)
+1.3.6.1.2.1.6.1.0|integer|4
+1.3.6.1.2.1.6.9.0|integer|100
+1.3.6.1.2.1.7.1.0|counter32|500000
+1.3.6.1.2.1.7.4.0|counter32|400000
+
+# SNMP group
+1.3.6.1.2.1.11.1.0|counter32|10000
+1.3.6.1.2.1.11.2.0|counter32|5000
