@@ -6,6 +6,11 @@ This guide documents the complete process for scaling the SNMP simulator and Zab
 
 **Status**: ✅ Successfully deployed and tested
 
+**SNMPv3 Update (2026-02-18)**:
+- Simulator SNMPv3 (`noAuthNoPriv`) communication validated from Zabbix network
+- Zabbix SNMPv3 polling and history ingestion verified
+- 50 active hosts (`cisco-iosxr-001` to `cisco-iosxr-050`) migrated to SNMPv3
+
 ## Target Configuration
 
 | Metric | Value |
@@ -26,7 +31,7 @@ This guide documents the complete process for scaling the SNMP simulator and Zab
 - **Resources**: 1000 virtual SNMP agents
 - **Port Range**: 20000-20999 (one port per device)
 - **Data Source**: sample-rich.snmprec (1,876 OIDs)
-- **Capabilities**: SNMPv2c with 1,876 available OID values
+- **Capabilities**: SNMPv2c and SNMPv3 (noAuthNoPriv) with 1,876 available OID values
 
 ### Zabbix Monitoring
 - **Deployment**: Docker Compose stack (Server 7.4.7, Frontend, PostgreSQL)
@@ -90,6 +95,7 @@ docker run -d --name snmpsim \
   -v "$(pwd)/sample-rich.snmprec:/app/sample-rich.snmprec:ro" \
   go-snmpsim:latest \
   -snmprec /app/sample-rich.snmprec \
+  -snmpv3-user simuser \
   -devices 1000 \
   -port-start 20000 \
   -web-port 8080
@@ -127,7 +133,7 @@ docker-compose -f docker-compose.zabbix.yml ps
 
 **Goal**: Add cisco-iosxr-001 through cisco-iosxr-1000 to monitoring
 
-**Script**: `add_remaining_hosts.py`
+**Script**: `scripts/add_remaining_hosts.py`
 
 **Configuration**:
 ```python
@@ -159,7 +165,7 @@ python3 add_remaining_hosts.py
 
 **Goal**: Create and assign monitoring items to all 1000 hosts
 
-**Script**: `add_bulk_items.py`
+**Script**: `scripts/add_bulk_items.py`
 
 **Item Configuration**:
 ```python
@@ -195,7 +201,7 @@ python3 add_bulk_items.py  # TEST_MODE = True
 
 # Deploy to all hosts:
 # Edit script: TEST_MODE = False
-nohup python3 -u add_bulk_items.py > add_items.log 2>&1 &
+nohup python3 -u scripts/add_bulk_items.py > add_items.log 2>&1 &
 
 # Monitor progress:
 tail -f add_items.log
@@ -301,7 +307,7 @@ Working items: 1366 / 1377
 # From Zabbix container
 docker exec -it zabbix-server ping 172.18.0.1
 docker exec -it zabbix-server \
-  snmpwalk -v 2c -c public 172.18.0.1:20000 1.3.6.1.2.1.1.1.0
+  snmpwalk -v3 -l noAuthNoPriv -u simuser 172.18.0.1:20000 1.3.6.1.2.1.1.1.0
 ```
 
 ## API Compatibility Notes
@@ -321,10 +327,12 @@ docker exec -it zabbix-server \
     'ip': '172.18.0.1',
     'port': '20000',
     'details': {
-        'version': '2',
-        'bulk': '1',
-        'community': '{$SNMP_COMMUNITY}',
-        'max_repetitions': '10'
+    'version': 3,
+    'bulk': 1,
+    'securityname': 'simuser',
+    'securitylevel': 0,
+    'contextname': '',
+    'max_repetitions': 10
     }
 }]
 ```
@@ -350,13 +358,13 @@ if item['value_type'] == 4:  # Text
 **Causes**:
 1. SNMP connectivity: Zabbix can't reach simulator
 2. OID mismatch: Requested OID doesn't exist in SNMPREC
-3. SNMP parameters: community string or version mismatch
+3. SNMP parameters: version/securityName mismatch
 
 **Solutions**:
 ```bash
 # Test SNMP connectivity
 docker exec zabbix-server \
-  snmpwalk -v 2c -c public 172.18.0.1:20000 1.3.6.1.2.1
+  snmpwalk -v3 -l noAuthNoPriv -u simuser 172.18.0.1:20000 1.3.6.1.2.1
 
 # Check OID in data file
 grep "^1.3.6.1.2.1.1.1.0" sample-rich.snmprec

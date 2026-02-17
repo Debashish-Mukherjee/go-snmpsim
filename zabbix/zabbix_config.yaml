@@ -6,11 +6,18 @@ zabbix_password: "zabbix"
 # SNMP Simulator Settings
 snmp_port_start: 20000
 snmp_community: "public"
-snmp_version: "2"
+snmp_version: "3"
+snmp_v3_securityname: "simuser"
+snmp_v3_securitylevel: 0
+snmp_v3_authprotocol: 1
+snmp_v3_authpassphrase: ""
+snmp_v3_privprotocol: 1
+snmp_v3_privpassphrase: ""
+snmp_v3_contextname: ""
 
 # Device Polling Settings
 polling_interval: "1m"
-template_name: "Template Net Cisco IOS XR SNMPv2"
+template_name: "Template Net Cisco IOS XR SNMP"
 hostgroup_name: "SNMP Simulated Devices"
 
 # Performance Settings

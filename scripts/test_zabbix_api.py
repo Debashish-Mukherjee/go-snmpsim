@@ -59,8 +59,11 @@ host_payload = {
                 "dns": "",
                 "port": "20000",
                 "details": {
-                    "version": 2,  # SNMPv2
-                    "community": "{$SNMP_COMMUNITY}"
+                    "version": 3,  # SNMPv3
+                    "bulk": 1,
+                    "securityname": "simuser",
+                    "securitylevel": 0,
+                    "contextname": ""
                 }
             }
         ],

@@ -171,6 +171,13 @@ class ZabbixAPIClient:
         port: int = 161,
         snmp_version: str = "2",
         community: str = "public",
+        snmpv3_securityname: str = "simuser",
+        snmpv3_securitylevel: int = 0,
+        snmpv3_authprotocol: int = 1,
+        snmpv3_authpassphrase: str = "",
+        snmpv3_privprotocol: int = 1,
+        snmpv3_privpassphrase: str = "",
+        snmpv3_contextname: str = "",
         group_id: str = "5"  # Changed default to "Discovered hosts"
     ) -> str:
         """
@@ -182,6 +189,13 @@ class ZabbixAPIClient:
             port: SNMP port (default: 161)
             snmp_version: SNMP version ("1" or "2" or "3")
             community: SNMP community (for SNMPv1/v2)
+            snmpv3_securityname: SNMPv3 username/securityName
+            snmpv3_securitylevel: 0=noAuthNoPriv, 1=authNoPriv, 2=authPriv
+            snmpv3_authprotocol: Zabbix auth protocol enum (default: 1 = SHA1)
+            snmpv3_authpassphrase: SNMPv3 auth passphrase
+            snmpv3_privprotocol: Zabbix priv protocol enum (default: 1 = AES128)
+            snmpv3_privpassphrase: SNMPv3 privacy passphrase
+            snmpv3_contextname: SNMPv3 context name
             group_id: Host group ID (default: 5 = "Discovered hosts")
             
         Returns:
@@ -194,6 +208,33 @@ class ZabbixAPIClient:
         version_int = int(snmp_version)
         
         # Create SNMP interface (Zabbix 7.x format)
+        details = {
+            "version": version_int,
+            "bulk": 1,
+            "max_repetitions": 10
+        }
+
+        if version_int == 3:
+            details.update({
+                "securityname": snmpv3_securityname,
+                "securitylevel": int(snmpv3_securitylevel),
+                "contextname": snmpv3_contextname
+            })
+
+            if int(snmpv3_securitylevel) >= 1:
+                details.update({
+                    "authprotocol": int(snmpv3_authprotocol),
+                    "authpassphrase": snmpv3_authpassphrase
+                })
+
+            if int(snmpv3_securitylevel) >= 2:
+                details.update({
+                    "privprotocol": int(snmpv3_privprotocol),
+                    "privpassphrase": snmpv3_privpassphrase
+                })
+        else:
+            details["community"] = "{$SNMP_COMMUNITY}" if community == "public" else community
+
         interfaces = [
             {
                 "type": 2,  # SNMP interface
@@ -202,10 +243,7 @@ class ZabbixAPIClient:
                 "ip": ip_address,
                 "dns": "",
                 "port": str(port),
-                "details": {
-                    "version": version_int,  # Integer, not string
-                    "community": "{$SNMP_COMMUNITY}" if community == "public" else community
-                }
+                "details": details
             }
         ]
         

@@ -17,6 +17,8 @@ type VirtualAgent struct {
 	deviceID      int
 	port          int
 	sysName       string
+	v3Username    string
+	v3EngineID    string
 	oidDB         *store.OIDDatabase
 	indexManager  *store.OIDIndexManager  // Index manager for Zabbix LLD (table-aware)
 	deviceMapping *store.DeviceOIDMapping // Device-specific OID overrides
@@ -30,11 +32,17 @@ type VirtualAgent struct {
 }
 
 // NewVirtualAgent creates a new virtual SNMP agent
-func NewVirtualAgent(deviceID int, port int, sysName string, oidDB *store.OIDDatabase) *VirtualAgent {
+func NewVirtualAgent(deviceID int, port int, sysName string, oidDB *store.OIDDatabase, v3Username string) *VirtualAgent {
+	if v3Username == "" {
+		v3Username = "simuser"
+	}
+
 	return &VirtualAgent{
 		deviceID:      deviceID,
 		port:          port,
 		sysName:       sysName,
+		v3Username:    v3Username,
+		v3EngineID:    fmt.Sprintf("\x80\x00\x1f\x88gosnmpsim-%d", deviceID),
 		oidDB:         oidDB,
 		indexManager:  nil,
 		deviceMapping: nil,
@@ -69,11 +77,14 @@ func (va *VirtualAgent) HandlePacket(packet []byte) []byte {
 			va.deviceID, va.port, count)
 	}
 
-	decoder := gosnmp.GoSNMP{Version: gosnmp.Version2c, Community: "public"}
-	req, err := decoder.SnmpDecodePacket(packet)
+	req, err := va.decodePacket(packet)
 	if err != nil {
 		log.Printf("Device %d: Failed to parse SNMP packet: %v", va.deviceID, err)
 		return nil
+	}
+
+	if va.shouldSendV3DiscoveryReport(req) {
+		return va.handleV3DiscoveryReport(req)
 	}
 
 	switch req.PDUType {
@@ -86,6 +97,109 @@ func (va *VirtualAgent) HandlePacket(packet []byte) []byte {
 	default:
 		return va.handleGetRequest(req)
 	}
+}
+
+func (va *VirtualAgent) decodePacket(packet []byte) (*gosnmp.SnmpPacket, error) {
+	versions := []gosnmp.SnmpVersion{gosnmp.Version3, gosnmp.Version2c, gosnmp.Version1}
+	var lastErr error
+
+	for _, version := range versions {
+		decoder := gosnmp.GoSNMP{Version: version, Community: "public"}
+		if version == gosnmp.Version3 {
+			decoder.SecurityModel = gosnmp.UserSecurityModel
+			decoder.MsgFlags = gosnmp.NoAuthNoPriv
+			decoder.SecurityParameters = &gosnmp.UsmSecurityParameters{UserName: va.v3Username}
+		}
+
+		req, err := decoder.SnmpDecodePacket(packet)
+		if err == nil {
+			return req, nil
+		}
+		lastErr = err
+	}
+
+	return nil, lastErr
+}
+
+func buildResponseFromRequest(req *gosnmp.SnmpPacket, vars []gosnmp.SnmpPDU, errCode gosnmp.SNMPError, errIndex uint8) *gosnmp.SnmpPacket {
+	response := *req
+	response.PDUType = gosnmp.GetResponse
+	response.Variables = vars
+	response.Error = errCode
+	response.ErrorIndex = errIndex
+	return &response
+}
+
+func (va *VirtualAgent) buildResponseFromRequest(req *gosnmp.SnmpPacket, vars []gosnmp.SnmpPDU, errCode gosnmp.SNMPError, errIndex uint8) *gosnmp.SnmpPacket {
+	response := buildResponseFromRequest(req, vars, errCode, errIndex)
+
+	if response.Version == gosnmp.Version3 {
+		response.MsgFlags = gosnmp.NoAuthNoPriv
+		response.SecurityModel = gosnmp.UserSecurityModel
+		response.ContextEngineID = va.v3EngineID
+
+		username := va.v3Username
+		if req.SecurityParameters != nil {
+			if usm, ok := req.SecurityParameters.(*gosnmp.UsmSecurityParameters); ok && usm.UserName != "" {
+				username = usm.UserName
+			}
+		}
+
+		response.SecurityParameters = &gosnmp.UsmSecurityParameters{
+			AuthoritativeEngineID:    va.v3EngineID,
+			AuthoritativeEngineBoots: 1,
+			AuthoritativeEngineTime:  uint32(time.Since(va.startTime).Seconds()),
+			UserName:                 username,
+			AuthenticationProtocol:   gosnmp.NoAuth,
+			PrivacyProtocol:          gosnmp.NoPriv,
+		}
+	}
+
+	return response
+}
+
+func (va *VirtualAgent) shouldSendV3DiscoveryReport(req *gosnmp.SnmpPacket) bool {
+	if req == nil || req.Version != gosnmp.Version3 {
+		return false
+	}
+
+	usm, ok := req.SecurityParameters.(*gosnmp.UsmSecurityParameters)
+	if !ok || usm == nil {
+		return true
+	}
+
+	return usm.AuthoritativeEngineID == ""
+}
+
+func (va *VirtualAgent) handleV3DiscoveryReport(req *gosnmp.SnmpPacket) []byte {
+	requestUsername := ""
+	if req != nil && req.SecurityParameters != nil {
+		if usm, ok := req.SecurityParameters.(*gosnmp.UsmSecurityParameters); ok && usm != nil {
+			requestUsername = usm.UserName
+		}
+	}
+
+	vars := []gosnmp.SnmpPDU{
+		{
+			Name:  ".1.3.6.1.6.3.15.1.1.4.0",
+			Type:  gosnmp.Counter32,
+			Value: uint(1),
+		},
+	}
+
+	response := va.buildResponseFromRequest(req, vars, gosnmp.NoError, 0)
+	response.PDUType = gosnmp.Report
+	if usm, ok := response.SecurityParameters.(*gosnmp.UsmSecurityParameters); ok && usm != nil {
+		usm.UserName = requestUsername
+	}
+
+	data, err := response.MarshalMsg()
+	if err != nil {
+		log.Printf("Device %d: Failed to marshal v3 discovery report: %v", va.deviceID, err)
+		return nil
+	}
+
+	return data
 }
 
 // handleGetRequest processes GET requests
@@ -107,13 +221,7 @@ func (va *VirtualAgent) handleGetRequest(req *gosnmp.SnmpPacket) []byte {
 	}
 
 	// Marshal response without holding lock
-	outPacket := &gosnmp.SnmpPacket{
-		Version:   req.Version,
-		Community: req.Community,
-		PDUType:   gosnmp.GetResponse,
-		RequestID: req.RequestID,
-		Variables: vars,
-	}
+	outPacket := va.buildResponseFromRequest(req, vars, gosnmp.NoError, 0)
 
 	// Marshal response
 	data, err := outPacket.MarshalMsg()
@@ -146,13 +254,7 @@ func (va *VirtualAgent) handleGetNextRequest(req *gosnmp.SnmpPacket) []byte {
 	}
 
 	// Marshal response without holding lock
-	outPacket := &gosnmp.SnmpPacket{
-		Version:   req.Version,
-		Community: req.Community,
-		PDUType:   gosnmp.GetResponse,
-		RequestID: req.RequestID,
-		Variables: vars,
-	}
+	outPacket := va.buildResponseFromRequest(req, vars, gosnmp.NoError, 0)
 
 	data, err := outPacket.MarshalMsg()
 	if err != nil {
@@ -214,13 +316,7 @@ func (va *VirtualAgent) handleGetBulkRequest(req *gosnmp.SnmpPacket) []byte {
 		}
 	}
 
-	outPacket := &gosnmp.SnmpPacket{
-		Version:   req.Version,
-		Community: req.Community,
-		PDUType:   gosnmp.GetResponse,
-		RequestID: req.RequestID,
-		Variables: vars,
-	}
+	outPacket := va.buildResponseFromRequest(req, vars, gosnmp.NoError, 0)
 
 	data, err := outPacket.MarshalMsg()
 	if err != nil {
@@ -233,15 +329,7 @@ func (va *VirtualAgent) handleGetBulkRequest(req *gosnmp.SnmpPacket) []byte {
 
 // handleSetRequest returns read-only error response
 func (va *VirtualAgent) handleSetRequest(req *gosnmp.SnmpPacket) []byte {
-	outPacket := &gosnmp.SnmpPacket{
-		Version:    req.Version,
-		Community:  req.Community,
-		PDUType:    gosnmp.GetResponse,
-		RequestID:  req.RequestID,
-		Error:      4, // readOnly error (SNMPv2)
-		ErrorIndex: 1,
-		Variables:  []gosnmp.SnmpPDU{},
-	}
+	outPacket := va.buildResponseFromRequest(req, []gosnmp.SnmpPDU{}, 4, 1)
 
 	data, err := outPacket.MarshalMsg()
 	if err != nil {

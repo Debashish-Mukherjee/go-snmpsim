@@ -22,7 +22,7 @@ This implementation provides:
 │  • Host network mode (localhost:2000X)                       │
 └─────────────────────────────────────────────────────────────┘
                               ▲
-                              │ SNMPv2
+                              │ SNMPv3 (noAuthNoPriv)
                               │
 ┌─────────────────────────────────────────────────────────────┐
 │              Zabbix 7.4 (Docker Compose)                     │
@@ -123,6 +123,9 @@ zabbix_username: Admin
 zabbix_password: zabbix
 snmp_port_start: 20000
 snmp_community: public
+snmp_version: "3"
+snmp_v3_securityname: simuser
+snmp_v3_securitylevel: 0
 polling_interval: "5m"
 ```
 
@@ -189,8 +192,10 @@ hostid = client.create_host(
     hostname="cisco-iosxr-001",
     ip_address="127.0.0.1",
     port=20000,
-    snmp_version="2",
-    community="public"
+  snmp_version="3",
+  community="public",
+  snmpv3_securityname="simuser",
+  snmpv3_securitylevel=0
 )
 
 # Update polling
@@ -319,7 +324,9 @@ snmp:
   port_start: 20000
   port_end: 20019
   community: public
-  version: "2"
+  version: "3"
+  v3_securityname: simuser
+  v3_securitylevel: 0
   devices:
     count: 20
     metric_per_device: 1750

@@ -22,6 +22,7 @@ type Simulator struct {
 	portEnd     int
 	numDevices  int
 	snmprecFile string
+	v3Username  string
 
 	// Listeners and dispatcher
 	listeners    map[int]*net.UDPConn        // port -> listener
@@ -39,7 +40,7 @@ type Simulator struct {
 }
 
 // NewSimulator creates a new SNMP simulator instance
-func NewSimulator(listenAddr string, portStart, portEnd, numDevices int, snmprecFile string) (*Simulator, error) {
+func NewSimulator(listenAddr string, portStart, portEnd, numDevices int, snmprecFile string, v3Username string) (*Simulator, error) {
 	if portStart >= portEnd {
 		return nil, fmt.Errorf("portStart must be less than portEnd")
 	}
@@ -48,12 +49,17 @@ func NewSimulator(listenAddr string, portStart, portEnd, numDevices int, snmprec
 		return nil, fmt.Errorf("numDevices must be positive")
 	}
 
+	if v3Username == "" {
+		v3Username = "simuser"
+	}
+
 	sim := &Simulator{
 		listenAddr:  listenAddr,
 		portStart:   portStart,
 		portEnd:     portEnd,
 		numDevices:  numDevices,
 		snmprecFile: snmprecFile,
+		v3Username:  v3Username,
 		listeners:   make(map[int]*net.UDPConn),
 		agents:      make(map[int]*agent.VirtualAgent),
 		packetPool: &sync.Pool{
@@ -104,6 +110,7 @@ func (s *Simulator) createVirtualAgents(oidDB *store.OIDDatabase) error {
 			port,
 			fmt.Sprintf("Device-%d", deviceID),
 			oidDB,
+			s.v3Username,
 		)
 
 		// Assign index manager for Zabbix LLD support

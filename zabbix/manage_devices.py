@@ -70,6 +70,13 @@ def cmd_add_devices(args):
     snmp_port_start = config.get("snmp_port_start", 20000)
     snmp_community = config.get("snmp_community", "public")
     snmp_version = config.get("snmp_version", "2")
+    snmp_v3_securityname = config.get("snmp_v3_securityname", "simuser")
+    snmp_v3_securitylevel = int(config.get("snmp_v3_securitylevel", 0))
+    snmp_v3_authprotocol = int(config.get("snmp_v3_authprotocol", 1))
+    snmp_v3_authpassphrase = config.get("snmp_v3_authpassphrase", "")
+    snmp_v3_privprotocol = int(config.get("snmp_v3_privprotocol", 1))
+    snmp_v3_privpassphrase = config.get("snmp_v3_privpassphrase", "")
+    snmp_v3_contextname = config.get("snmp_v3_contextname", "")
     polling_interval = config.get("polling_interval", "5m")
     
     # Add devices
@@ -99,7 +106,14 @@ def cmd_add_devices(args):
                 ip_address=ip,
                 port=port,
                 snmp_version=snmp_version,
-                community=snmp_community
+                community=snmp_community,
+                snmpv3_securityname=snmp_v3_securityname,
+                snmpv3_securitylevel=snmp_v3_securitylevel,
+                snmpv3_authprotocol=snmp_v3_authprotocol,
+                snmpv3_authpassphrase=snmp_v3_authpassphrase,
+                snmpv3_privprotocol=snmp_v3_privprotocol,
+                snmpv3_privpassphrase=snmp_v3_privpassphrase,
+                snmpv3_contextname=snmp_v3_contextname
             )
             
             # Update polling interval
@@ -126,7 +140,11 @@ def cmd_add_devices(args):
     print("\n✅ All devices added successfully!")
     print(f"\nPolling Configuration:")
     print(f"  • SNMP Version: {snmp_version}")
-    print(f"  • Community: {snmp_community}")
+    if str(snmp_version) == "3":
+        print(f"  • SNMPv3 Security Name: {snmp_v3_securityname}")
+        print(f"  • SNMPv3 Security Level: {snmp_v3_securitylevel}")
+    else:
+        print(f"  • Community: {snmp_community}")
     print(f"  • Polling Interval: {polling_interval}")
     print(f"  • Port Range: {snmp_port_start} - {snmp_port_start + num_devices - 1}")
     print(f"\nNext steps:")

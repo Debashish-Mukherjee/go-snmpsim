@@ -20,6 +20,7 @@ func main() {
 	devices := flag.Int("devices", 100, "Number of virtual devices to simulate")
 	snmprecFile := flag.String("snmprec", "", "Path to .snmprec file for OID templates")
 	listenAddr := flag.String("listen", "0.0.0.0", "Listen address")
+	v3User := flag.String("snmpv3-user", "simuser", "SNMPv3 username for noAuthNoPriv requests")
 	webPort := flag.String("web-port", "8080", "Port for web UI API server")
 	flag.Parse()
 
@@ -29,6 +30,7 @@ func main() {
 	log.Printf("Starting SNMP Simulator")
 	log.Printf("SNMP Port range: %d-%d", *portStart, *portEnd)
 	log.Printf("Number of devices: %d", *devices)
+	log.Printf("SNMPv3 user: %s", *v3User)
 	log.Printf("Web UI port: %s (http://localhost:%s)", *webPort, *webPort)
 
 	// Create simulator
@@ -38,6 +40,7 @@ func main() {
 		*portEnd,
 		*devices,
 		*snmprecFile,
+		*v3User,
 	)
 	if err != nil {
 		log.Fatalf("Failed to create simulator: %v", err)

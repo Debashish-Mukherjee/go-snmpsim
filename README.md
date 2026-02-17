@@ -6,11 +6,21 @@
 
 > A high-performance SNMP simulator for testing monitoring systems at scale. Simulate 1,000+ virtual devices with minimal resource usage.
 
+## 📦 Release
+
+- **Current Release**: `v1.0.0`
+- **Release Date**: 2026-02-18
+- **Highlights**:
+  - SNMPv2c + SNMPv3 (`noAuthNoPriv`) support in simulator
+  - Zabbix host provisioning updated for SNMPv3 interfaces
+  - End-to-end SNMPv3 polling verified with history collection
+  - First 50 active hosts migrated to SNMPv3 (`cisco-iosxr-001` to `cisco-iosxr-050`)
+
 ## ✨ Features
 
 - 🔥 **High Performance** - Handle 10,000+ PDU/sec per port with O(log n) OID lookups
 - 📡 **Multi-Device Simulation** - Simulate 1,000+ virtual SNMP devices simultaneously
-- 🎯 **Protocol Support** - Full SNMP v2c implementation (v3 framework ready)
+- 🎯 **Protocol Support** - SNMP v2c and SNMPv3 (noAuthNoPriv)
 - 🗂️ **Flexible Data Loading** - Support for `.snmprec` files, snmpwalk output (3 formats)
 - 🔧 **Production Ready** - Context-based graceful shutdown, resource monitoring
 - 📊 **Zabbix Optimized** - Table indexing for LLD, <100ms response for 1,056 OIDs
@@ -50,6 +60,9 @@ docker run -p 20000-20100:20000-20100/udp go-snmpsim \
 # Query a simulated device
 snmpget -v2c -c public localhost:20000 1.3.6.1.2.1.1.1.0
 
+# Query the same device using SNMPv3
+snmpget -v3 -l noAuthNoPriv -u simuser localhost:20000 1.3.6.1.2.1.1.1.0
+
 # Walk all OIDs
 snmpwalk -v2c -c public localhost:20000 1.3.6.1.2.1
 
@@ -59,7 +72,7 @@ snmpbulkwalk -v2c -c public localhost:20000 1.3.6.1.2.1.2.2.1
 
 ## 🏆 Scale to 1,000+ Hosts with Zabbix
 
-See **[SCALING_GUIDE.md](SCALING_GUIDE.md)** for complete instructions to deploy:
+See **[docs/SCALING_GUIDE.md](docs/SCALING_GUIDE.md)** for complete instructions to deploy:
 - **1,000 virtual SNMP devices** (ports 20000-20999)
 - **1,354,000 metrics** total (~1,354 per host)
 - **5-minute polling** on all items
@@ -67,7 +80,7 @@ See **[SCALING_GUIDE.md](SCALING_GUIDE.md)** for complete instructions to deploy
 
 ### Latest Test Results
 
-See **[TEST_REPORT.md](TEST_REPORT.md)** for details:
+See **[docs/TEST_REPORT.md](docs/TEST_REPORT.md)** for details:
 - ✅ **1000 hosts** created and deployed
 - ✅ **1.35M+ metrics** configured
 - ✅ **5-minute polling** verified
@@ -76,7 +89,7 @@ See **[TEST_REPORT.md](TEST_REPORT.md)** for details:
 
 **Quick Deploy**:
 ```bash
-# See SCALING_GUIDE.md for all steps
+# See docs/SCALING_GUIDE.md for all steps
 python3 scripts/add_remaining_hosts.py       # Add 900 hosts to Zabbix
 python3 scripts/add_bulk_items.py            # Deploy ~1,500 items per host
 ```
@@ -97,6 +110,8 @@ Options:
         Path to .snmprec file for OID templates
   -listen string
         Listen address (default: 0.0.0.0)
+    -snmpv3-user string
+      SNMPv3 username for noAuthNoPriv requests (default: simuser)
 ```
 
 ## 🏗️ Architecture

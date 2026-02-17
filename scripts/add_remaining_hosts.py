@@ -62,10 +62,12 @@ def main():
                     'dns': '',
                     'port': str(port),
                     'details': {
-                        'version': '2',
-                        'bulk': '1',
-                        'community': '{$SNMP_COMMUNITY}',
-                        'max_repetitions': '10'
+                        'version': 3,
+                        'bulk': 1,
+                        'securityname': 'simuser',
+                        'securitylevel': 0,
+                        'contextname': '',
+                        'max_repetitions': 10
                     }
                 }],
                 'groups': group_ids,

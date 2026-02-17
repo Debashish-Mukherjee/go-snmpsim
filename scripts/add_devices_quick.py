@@ -36,6 +36,13 @@ print("📦 Adding 100 devices to Zabbix...\n")
 snmp_port_start = config['snmp_port_start']
 snmp_community = config['snmp_community']
 snmp_version = config['snmp_version']
+snmp_v3_securityname = config.get('snmp_v3_securityname', 'simuser')
+snmp_v3_securitylevel = int(config.get('snmp_v3_securitylevel', 0))
+snmp_v3_authprotocol = int(config.get('snmp_v3_authprotocol', 1))
+snmp_v3_authpassphrase = config.get('snmp_v3_authpassphrase', '')
+snmp_v3_privprotocol = int(config.get('snmp_v3_privprotocol', 1))
+snmp_v3_privpassphrase = config.get('snmp_v3_privpassphrase', '')
+snmp_v3_contextname = config.get('snmp_v3_contextname', '')
 
 added = 0
 skipped = 0
@@ -61,7 +68,14 @@ for device_num in range(1, 101):
             ip_address=ip,
             port=port,
             snmp_version=snmp_version,
-            community=snmp_community
+            community=snmp_community,
+            snmpv3_securityname=snmp_v3_securityname,
+            snmpv3_securitylevel=snmp_v3_securitylevel,
+            snmpv3_authprotocol=snmp_v3_authprotocol,
+            snmpv3_authpassphrase=snmp_v3_authpassphrase,
+            snmpv3_privprotocol=snmp_v3_privprotocol,
+            snmpv3_privpassphrase=snmp_v3_privpassphrase,
+            snmpv3_contextname=snmp_v3_contextname
         )
         
         print(f"✅ Device {device_num:3d}: {hostname:20s} (port {port}) - added successfully")

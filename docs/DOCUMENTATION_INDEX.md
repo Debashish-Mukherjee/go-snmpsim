@@ -1,10 +1,12 @@
 # Repository Documentation Index
 
+> **Release**: `v1.0.0` (2026-02-18) — includes SNMPv3 end-to-end support and migration notes.
+
 ## Quick Start
 
-- **[README.md](README.md)** - Project overview and basic setup
+- **[README.md](../README.md)** - Project overview and basic setup
 - **[QUICKSTART.md](QUICKSTART.md)** - Get running in 5 minutes
-- **[QUICK_COMMANDS.sh](QUICK_COMMANDS.sh)** - Essential commands reference
+- **[QUICK_COMMANDS.sh](../scripts/QUICK_COMMANDS.sh)** - Essential commands reference
 
 ## Deployment & Infrastructure
 
@@ -36,7 +38,7 @@
 
 ## Development & Contributing
 
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Contribution guidelines
+- **[CONTRIBUTING.md](../CONTRIBUTING.md)** - Contribution guidelines
 - **[GITHUB_CHECKLIST.md](GITHUB_CHECKLIST.md)** - Pre-commit checklist
 
 ## Architecture & Detailed Docs
@@ -53,22 +55,22 @@ See [docs/](docs/) folder for comprehensive architecture documentation:
 ## Key Files by Use Case
 
 ### "I want to understand the project"
-1. Start with [README.md](README.md)
+1. Start with [README.md](../README.md)
 2. Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 3. Check [PERFORMANCE_REVIEW.md](PERFORMANCE_REVIEW.md) for optimizations
 
 ### "I want to set up monitoring for 1000 hosts"
 1. Follow [SCALING_GUIDE.md](SCALING_GUIDE.md) - complete step-by-step
-2. Reference [QUICK_COMMANDS.sh](QUICK_COMMANDS.sh) for commands
+2. Reference [QUICK_COMMANDS.sh](../scripts/QUICK_COMMANDS.sh) for commands
 3. Check [TEST_REPORT.md](TEST_REPORT.md) for expected results
 
 ### "I want to run it locally"
 1. Start with [QUICKSTART.md](QUICKSTART.md)
-2. Use [QUICK_COMMANDS.sh](QUICK_COMMANDS.sh) for commands
+2. Use [QUICK_COMMANDS.sh](../scripts/QUICK_COMMANDS.sh) for commands
 3. See [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) for details
 
 ### "I want to contribute"
-1. Read [CONTRIBUTING.md](CONTRIBUTING.md)
+1. Read [CONTRIBUTING.md](../CONTRIBUTING.md)
 2. Check [GITHUB_CHECKLIST.md](GITHUB_CHECKLIST.md)
 3. Review [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md) for API details
 
@@ -111,7 +113,7 @@ python3 scripts/script_name.py
 |----------|--------------|----------|
 | **[SCALING_GUIDE.md](SCALING_GUIDE.md)** | Setting up 1000 hosts | Complete how-to with phases |
 | **[TEST_REPORT.md](TEST_REPORT.md)** | Validating deployment | Test results and metrics |
-| **[README.md](README.md)** | First time viewing project | Overview and quick start |
+| **[README.md](../README.md)** | First time viewing project | Overview and quick start |
 
 ### Reference Documents
 
@@ -127,11 +129,11 @@ python3 scripts/script_name.py
 - [QUICKSTART.md](QUICKSTART.md) - 5-min setup
 - [SETUP_COMPLETE.md](SETUP_COMPLETE.md) - Validation
 - [WEB_UI_IMPLEMENTATION.md](WEB_UI_IMPLEMENTATION.md) - Web UI features
-- [CONTRIBUTING.md](CONTRIBUTING.md) - Dev guidelines
+- [CONTRIBUTING.md](../CONTRIBUTING.md) - Dev guidelines
 
 ---
 
-## Latest Updates (February 17, 2026)
+## Latest Updates (February 18, 2026)
 
 ✅ **NEW**: Scaling to 1000 hosts completed
 - ✅ SNMP Simulator: 1000 devices, 1876 OIDs
@@ -139,6 +141,11 @@ python3 scripts/script_name.py
 - ✅ Items: ~1,354,000 metrics deployed
 - ✅ Polling: 5-minute intervals on all items
 - ✅ Data: Actively collecting ~27,000 values/minute
+
+✅ **NEW**: SNMPv3 (`noAuthNoPriv`) completed
+- ✅ End-to-end SNMPv3 query path validated
+- ✅ Zabbix SNMPv3 host provisioning validated
+- ✅ 50 active hosts migrated to SNMPv3 (`cisco-iosxr-001` to `cisco-iosxr-050`)
 
 **Documentation**:
 - ✅ [SCALING_GUIDE.md](SCALING_GUIDE.md) - Complete scaling how-to
@@ -153,18 +160,17 @@ python3 scripts/script_name.py
 ```
 go-snmpsim/
 ├── README.md                    # Project overview
-├── SCALING_GUIDE.md            # ⭐ NEW - How to scale to 1000 hosts
-├── TEST_REPORT.md              # ⭐ NEW - Complete test results
-├── QUICKSTART.md               # Quick setup (5 min)
-├── QUICK_COMMANDS.sh           # Command reference
-│
-├── docs/                        # Detailed architecture docs
+├── docs/                        # Primary and detailed docs
+│   ├── SCALING_GUIDE.md         # ⭐ How to scale to 1000 hosts
+│   ├── TEST_REPORT.md           # ⭐ Complete test results
+│   ├── QUICKSTART.md            # Quick setup (5 min)
 │   ├── ARCHITECTURE.md
 │   ├── TESTING.md
 │   ├── ZABBIX_INTEGRATION.md
 │   └── ...
 │
-├── scripts/                     # Automation scripts
+├── scripts/                     # Automation + command scripts
+│   ├── QUICK_COMMANDS.sh
 │   ├── add_remaining_hosts.py
 │   ├── add_bulk_items.py
 │   ├── generate_rich_snmprec.py
@@ -209,5 +215,5 @@ go-snmpsim/
 
 ---
 
-Last Updated: February 17, 2026  
-Status: ✅ Scaling Complete - Ready for Production
+Last Updated: February 18, 2026  
+Status: ✅ Release v1.0.0 - SNMPv2c + SNMPv3 ready

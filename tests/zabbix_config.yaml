@@ -23,7 +23,14 @@ snmp:
   port_start: 20000
   port_end: 20019
   community: public
-  version: "2"
+  version: "3"
+  v3_securityname: simuser
+  v3_securitylevel: 0
+  v3_authprotocol: 1
+  v3_authpassphrase: ""
+  v3_privprotocol: 1
+  v3_privpassphrase: ""
+  v3_contextname: ""
   timeout: 5
   retries: 3
   
