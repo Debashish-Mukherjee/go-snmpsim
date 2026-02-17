@@ -29,6 +29,10 @@ type TestRequest struct {
 	Community    string   `json:"community"`
 	Timeout      int      `json:"timeout"`
 	MaxRepeaters int      `json:"max_repeaters"`
+	Concurrency  int      `json:"concurrency"`
+	Iterations   int      `json:"iterations"`
+	IntervalSec  int      `json:"interval_seconds"`
+	DurationSec  int      `json:"duration_seconds"`
 }
 
 // TestResult holds the result of a single SNMP test
@@ -36,6 +40,7 @@ type TestResult struct {
 	Port      int       `json:"port"`
 	Device    int       `json:"device"`
 	OID       string    `json:"oid"`
+	Iteration int       `json:"iteration"`
 	Success   bool      `json:"success"`
 	Value     string    `json:"value"`
 	Type      string    `json:"type"`
@@ -48,6 +53,10 @@ type TestResult struct {
 type TestResults struct {
 	TestID       string       `json:"test_id"`
 	TestType     string       `json:"test_type"`
+	Iterations   int          `json:"iterations"`
+	IntervalSec  int          `json:"interval_seconds"`
+	Concurrency  int          `json:"concurrency"`
+	DurationSec  int          `json:"duration_seconds"`
 	TotalTests   int          `json:"total_tests"`
 	SuccessCount int          `json:"success_count"`
 	FailureCount int          `json:"failure_count"`
@@ -98,19 +107,50 @@ func (st *SNMPTester) RunTests(req interface{}) *TestResults {
 	}
 
 	startTime := time.Now()
+
+	intervalSec := testReq.IntervalSec
+	if intervalSec <= 0 {
+		intervalSec = 5
+	}
+
+	iterations := testReq.Iterations
+	if testReq.DurationSec > 0 {
+		iterations = testReq.DurationSec / intervalSec
+		if testReq.DurationSec%intervalSec != 0 {
+			iterations++
+		}
+	}
+	if iterations <= 0 {
+		iterations = 1
+	}
+
+	concurrency := testReq.Concurrency
+	if concurrency <= 0 {
+		concurrency = 20
+	}
+	if concurrency > 1000 {
+		concurrency = 1000
+	}
+
 	results := &TestResults{
 		TestID:       fmt.Sprintf("test_%d", startTime.Unix()),
 		TestType:     testReq.TestType,
+		Iterations:   iterations,
+		IntervalSec:  intervalSec,
+		Concurrency:  concurrency,
+		DurationSec:  testReq.DurationSec,
 		Results:      []TestResult{},
 		StartTime:    startTime,
 		ErrorSummary: []string{},
 	}
 
-	// Run tests for each port/device
-	for port := testReq.PortStart; port <= testReq.PortEnd; port++ {
-		deviceNum := port - testReq.PortStart
-		testResults := st.runTestForPort(port, deviceNum, &testReq)
-		results.Results = append(results.Results, testResults...)
+	for iter := 1; iter <= iterations; iter++ {
+		iterResults := st.runIteration(iter, concurrency, &testReq)
+		results.Results = append(results.Results, iterResults...)
+
+		if iter < iterations {
+			time.Sleep(time.Duration(intervalSec) * time.Second)
+		}
 	}
 
 	// Calculate statistics
@@ -124,6 +164,86 @@ func (st *SNMPTester) RunTests(req interface{}) *TestResults {
 	st.mu.Unlock()
 
 	return results
+}
+
+type testJob struct {
+	port      int
+	deviceNum int
+	oid       string
+	iteration int
+}
+
+func (st *SNMPTester) runIteration(iteration, concurrency int, req *TestRequest) []TestResult {
+	jobs := make(chan testJob)
+	results := make(chan TestResult, concurrency)
+	var wg sync.WaitGroup
+
+	worker := func() {
+		defer wg.Done()
+		for job := range jobs {
+			start := time.Now()
+			var value, typeStr string
+			var err error
+			target := fmt.Sprintf("localhost:%d", job.port)
+
+			// Choose SNMP command based on test type
+			switch req.TestType {
+			case "getnext":
+				value, typeStr, err = st.snmpGetNext(target, job.oid, req.Community, req.Timeout)
+			case "walk":
+				value, typeStr, err = st.snmpWalkSingle(target, job.oid, req.Community, req.Timeout)
+			case "bulkwalk":
+				value, typeStr, err = st.snmpBulkwalk(target, job.oid, req.Community, req.Timeout, req.MaxRepeaters)
+			default: // "get" or any other type
+				value, typeStr, err = st.snmpGet(target, job.oid, req.Community, req.Timeout)
+			}
+			latency := time.Since(start).Seconds() * 1000
+
+			result := TestResult{
+				Port:      job.port,
+				Device:    job.deviceNum,
+				OID:       job.oid,
+				Iteration: job.iteration,
+				LatencyMs: latency,
+				Timestamp: start,
+			}
+
+			if err != nil {
+				result.Success = false
+				result.Error = err.Error()
+			} else {
+				result.Success = true
+				result.Value = value
+				result.Type = typeStr
+			}
+
+			results <- result
+		}
+	}
+
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go worker()
+	}
+
+	go func() {
+		for port := req.PortStart; port <= req.PortEnd; port++ {
+			deviceNum := port - req.PortStart
+			for _, oid := range req.OIDs {
+				jobs <- testJob{port: port, deviceNum: deviceNum, oid: oid, iteration: iteration}
+			}
+		}
+		close(jobs)
+		wg.Wait()
+		close(results)
+	}()
+
+	iterResults := make([]TestResult, 0)
+	for result := range results {
+		iterResults = append(iterResults, result)
+	}
+
+	return iterResults
 }
 
 // runTestForPort executes SNMP tests on a specific port
@@ -243,6 +363,120 @@ func (st *SNMPTester) snmpWalk(target, oid, community string, timeout int) ([]Te
 	}
 
 	return results, nil
+}
+
+// snmpGetNext executes a SNMP GETNEXT request
+func (st *SNMPTester) snmpGetNext(target, oid, community string, timeout int) (string, string, error) {
+	cmd := exec.Command(
+		"snmpgetnext",
+		"-v", "2c",
+		"-c", community,
+		"-t", strconv.Itoa(timeout),
+		"-O", "vq", // Value only, quick print
+		target,
+		oid,
+	)
+
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	var errOut bytes.Buffer
+	cmd.Stderr = &errOut
+
+	err := cmd.Run()
+	if err != nil {
+		return "", "", fmt.Errorf("snmpgetnext failed: %s", errOut.String())
+	}
+
+	output := strings.TrimSpace(out.String())
+	parts := strings.SplitN(output, ":", 2)
+	typeStr := "STRING"
+	value := output
+	if len(parts) == 2 {
+		typeStr = strings.TrimSpace(parts[0])
+		value = strings.TrimSpace(parts[1])
+	}
+
+	return value, typeStr, nil
+}
+
+// snmpBulkwalk executes a SNMP BULKWALK request (using snmptable for table walks)
+func (st *SNMPTester) snmpBulkwalk(target, oid, community string, timeout int, maxRepeaters int) (string, string, error) {
+	if maxRepeaters <= 0 {
+		maxRepeaters = 10
+	}
+
+	cmd := exec.Command(
+		"snmptable",
+		"-v", "2c",
+		"-c", community,
+		"-t", strconv.Itoa(timeout),
+		"-Cb", // Brief output format
+		"-Cc", // CSV output format
+		target,
+		oid,
+	)
+
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	var errOut bytes.Buffer
+	cmd.Stderr = &errOut
+
+	err := cmd.Run()
+	if err != nil {
+		// Fall back to regular snmpget if snmptable fails
+		return st.snmpGet(target, oid, community, timeout)
+	}
+
+	output := strings.TrimSpace(out.String())
+	if output == "" {
+		return "(empty table)", "TABLE", nil
+	}
+
+	// Count the number of lines as a rough measure
+	lineCount := strings.Count(output, "\n") + 1
+	return fmt.Sprintf("[%d rows]", lineCount), "TABLE", nil
+}
+
+// snmpWalkSingle performs a WALK operation but returns first value found
+func (st *SNMPTester) snmpWalkSingle(target, oid, community string, timeout int) (string, string, error) {
+	cmd := exec.Command(
+		"snmpwalk",
+		"-v", "2c",
+		"-c", community,
+		"-t", strconv.Itoa(timeout),
+		"-O", "vQn",
+		"-m", "ALL",
+		target,
+		oid,
+	)
+
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	var errOut bytes.Buffer
+	cmd.Stderr = &errOut
+
+	if err := cmd.Run(); err != nil {
+		return "", "", fmt.Errorf("snmpwalk failed: %s", errOut.String())
+	}
+
+	output := strings.TrimSpace(out.String())
+	if output == "" {
+		return "(no values)", "WALK", nil
+	}
+
+	// Return first line or count of results
+	lines := strings.Split(output, "\n")
+	if len(lines) > 1 {
+		return fmt.Sprintf("[%d entries]", len(lines)), "WALK", nil
+	}
+
+	// Parse single result
+	parts := strings.SplitN(lines[0], " = ", 2)
+	if len(parts) == 2 {
+		return strings.TrimSpace(parts[1]), "WALK", nil
+	}
+
+	return output, "WALK", nil
 }
 
 // calculateStats computes aggregate statistics for test results

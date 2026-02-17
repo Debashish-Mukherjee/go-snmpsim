@@ -8,6 +8,8 @@ const appState = {
     lastStatus: null,
     testResults: null,
     statusRefreshInterval: null,
+    testProgressInterval: null,
+    activeTest: null,
 };
 
 // Initialize app on page load
@@ -16,6 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeEventListeners();
     refreshStatus();
     startStatusRefresh();
+    refreshTestResults();
     loadWorkloads();
 });
 
@@ -42,6 +45,10 @@ function switchTab(tabName) {
     document.getElementById(tabName).classList.add('active');
     document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
     appState.currentTab = tabName;
+
+    if (tabName === 'test' && appState.activeTest) {
+        updateTestStatus();
+    }
 }
 
 // ===== EVENT LISTENERS =====
@@ -120,6 +127,41 @@ function updateStatusDisplay(status) {
     document.getElementById('status-uptime').textContent = status.uptime || '-';
     document.getElementById('status-polls').textContent = status.total_polls || 0;
     document.getElementById('status-latency').textContent = status.avg_latency || '-';
+
+    updateDashboardMetrics(appState.testResults);
+}
+
+async function refreshTestResults() {
+    try {
+        const response = await fetch(`${API_BASE}/test/results`);
+        if (!response.ok) {
+            return;
+        }
+
+        const results = await response.json();
+        if (results && results.total_tests) {
+            appState.testResults = results;
+            displayTestResults(results);
+            updateDashboardMetrics(results);
+        }
+    } catch (error) {
+        console.error('Error fetching test results:', error);
+    }
+}
+
+function updateDashboardMetrics(results) {
+    if (!results || !results.total_tests) {
+        document.getElementById('metric-success').textContent = '0';
+        document.getElementById('metric-failed').textContent = '0';
+        document.getElementById('metric-avg').textContent = '0ms';
+        document.getElementById('metric-rate').textContent = '0%';
+        return;
+    }
+
+    document.getElementById('metric-success').textContent = results.success_count || 0;
+    document.getElementById('metric-failed').textContent = results.failure_count || 0;
+    document.getElementById('metric-avg').textContent = `${(results.avg_latency_ms || 0).toFixed(2)}ms`;
+    document.getElementById('metric-rate').textContent = `${(results.success_rate || 0).toFixed(1)}%`;
 }
 
 // ===== SIMULATOR CONTROL =====
@@ -181,6 +223,9 @@ async function runTest() {
     const portEnd = parseInt(document.getElementById('test-port-end').value);
     const community = document.getElementById('test-community').value;
     const timeout = parseInt(document.getElementById('test-timeout').value);
+    const concurrency = parseInt(document.getElementById('test-concurrency').value);
+    const intervalSeconds = parseInt(document.getElementById('test-interval').value);
+    const durationSeconds = parseInt(document.getElementById('test-duration').value);
     const maxRepeaters = parseInt(document.getElementById('test-repeaters').value);
 
     if (!oidsText.trim()) {
@@ -194,8 +239,30 @@ async function runTest() {
         .filter(oid => oid.length > 0);
 
     const statusDiv = document.getElementById('test-status');
-    statusDiv.textContent = '⏳ Running tests...';
+    const runButton = document.getElementById('btn-run-test');
+    const progressDiv = document.getElementById('live-progress');
+    const liveResultsDiv = document.getElementById('last-results-window');
+    
     statusDiv.className = 'test-status running';
+    runButton.disabled = true;
+    
+    // Show progress and live results panels
+    if (progressDiv) {
+        progressDiv.style.display = 'block';
+    }
+    if (liveResultsDiv) {
+        liveResultsDiv.style.display = 'block';
+    }
+
+    appState.activeTest = {
+        startTime: Date.now(),
+        durationSeconds: durationSeconds,
+        intervalSeconds: intervalSeconds,
+        portStart: portStart,
+        portEnd: portEnd,
+        oidsCount: oids.length,
+    };
+    startTestProgress();
 
     try {
         const response = await fetch(`${API_BASE}/test/snmp`, {
@@ -208,6 +275,9 @@ async function runTest() {
                 port_end: portEnd,
                 community: community,
                 timeout: timeout,
+                concurrency: concurrency,
+                interval_seconds: intervalSeconds,
+                duration_seconds: durationSeconds,
                 max_repeaters: maxRepeaters,
             }),
         });
@@ -219,6 +289,7 @@ async function runTest() {
         const results = await response.json();
         appState.testResults = results;
         displayTestResults(results);
+        updateDashboardMetrics(results);
 
         statusDiv.textContent = `✅ Tests completed: ${results.success_count}/${results.total_tests} successful`;
         statusDiv.className = 'test-status success';
@@ -226,7 +297,84 @@ async function runTest() {
         statusDiv.textContent = `❌ Error: ${error.message}`;
         statusDiv.className = 'test-status error';
         showNotification(`Test error: ${error.message}`, 'error');
+    } finally {
+        stopTestProgress();
+        runButton.disabled = false;
     }
+}
+
+function startTestProgress() {
+    stopTestProgress();
+    updateTestStatus();
+
+    appState.testProgressInterval = setInterval(() => {
+        updateTestStatus();
+    }, 1000);
+}
+
+function stopTestProgress() {
+    if (appState.testProgressInterval) {
+        clearInterval(appState.testProgressInterval);
+        appState.testProgressInterval = null;
+    }
+    appState.activeTest = null;
+}
+
+function updateTestStatus() {
+    if (!appState.activeTest) {
+        return;
+    }
+
+    const statusDiv = document.getElementById('test-status');
+    const now = Date.now();
+    const elapsedSec = Math.max(0, Math.floor((now - appState.activeTest.startTime) / 1000));
+    const durationSec = Math.max(1, appState.activeTest.durationSeconds || 1);
+    const intervalSec = Math.max(1, appState.activeTest.intervalSeconds || 5);
+    const totalIterations = Math.ceil(durationSec / intervalSec);
+    const currentIteration = Math.min(totalIterations, Math.floor(elapsedSec / intervalSec) + 1);
+    const remainingSec = Math.max(0, durationSec - elapsedSec);
+    const progressPercent = (currentIteration / totalIterations) * 100;
+
+    statusDiv.textContent = `⏳ Running tests... iter ${currentIteration}/${totalIterations} | elapsed ${formatDuration(elapsedSec)} | remaining ${formatDuration(remainingSec)}`;
+
+    // Update progress bar
+    const progressBar = document.getElementById('progress-fill');
+    const progressIter = document.getElementById('progress-iter');
+    const progressTime = document.getElementById('progress-elapsed');
+    const progressRemaining = document.getElementById('progress-remaining');
+
+    if (progressBar) {
+        progressBar.style.width = progressPercent + '%';
+    }
+    if (progressIter) {
+        progressIter.textContent = `Iter ${currentIteration}/${totalIterations}`;
+    }
+    if (progressTime) {
+        progressTime.textContent = `Elapsed: ${formatDuration(elapsedSec)}`;
+    }
+    if (progressRemaining) {
+        progressRemaining.textContent = `Remaining: ${formatDuration(remainingSec)}`;
+    }
+
+    // Calculate and update result rate
+    if (appState.testResults && appState.testResults.total_tests > 0) {
+        const resultsPerSecond = (appState.testResults.total_tests / Math.max(1, elapsedSec)).toFixed(1);
+        const progressRate = document.getElementById('progress-rate');
+        if (progressRate) {
+            progressRate.textContent = `Rate: ${resultsPerSecond}/s`;
+        }
+        
+        const progressSuccess = document.getElementById('progress-success');
+        if (progressSuccess) {
+            progressSuccess.textContent = `✅ ${appState.testResults.success_count}`;
+        }
+    }
+}
+
+function formatDuration(totalSeconds) {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}m ${seconds}s`;
 }
 
 function displayTestResults(results) {
@@ -241,6 +389,13 @@ function displayTestResults(results) {
     document.getElementById('result-avg').textContent = results.avg_latency_ms.toFixed(2) + 'ms';
     document.getElementById('result-min').textContent = results.min_latency_ms.toFixed(2) + 'ms';
     document.getElementById('result-max').textContent = results.max_latency_ms.toFixed(2) + 'ms';
+
+    // Show live results window (last 20 results)
+    const liveResultsDiv = document.getElementById('last-results-window');
+    if (liveResultsDiv) {
+        liveResultsDiv.style.display = 'block';
+        updateLiveResultsTable(results.results);
+    }
 
     // Show results table
     const tableDiv = document.getElementById('results-table-container');
@@ -264,12 +419,46 @@ function displayTestResults(results) {
     });
 }
 
+function updateLiveResultsTable(allResults) {
+    const tbody = document.getElementById('live-results-tbody');
+    if (!tbody) return;
+
+    // Get the last 20 results
+    const lastResults = allResults.slice(-20);
+    
+    tbody.innerHTML = '';
+    lastResults.forEach(result => {
+        const row = tbody.insertRow();
+        row.innerHTML = `
+            <td>${result.port}</td>
+            <td>${result.oid}</td>
+            <td class="${result.success ? 'success' : 'failure'}">
+                ${result.success ? '✅' : '❌'}
+            </td>
+            <td>${result.value}</td>
+            <td>${result.latency_ms.toFixed(2)}ms</td>
+        `;
+    });
+}
+
 function clearResults() {
     document.getElementById('results-summary').style.display = 'none';
     document.getElementById('results-table-container').style.display = 'none';
     document.getElementById('results-empty').style.display = 'block';
     document.getElementById('test-status').textContent = '';
+    
+    const progressDiv = document.getElementById('live-progress');
+    if (progressDiv) {
+        progressDiv.style.display = 'none';
+    }
+    
+    const liveResultsDiv = document.getElementById('last-results-window');
+    if (liveResultsDiv) {
+        liveResultsDiv.style.display = 'none';
+    }
+    
     appState.testResults = null;
+    updateDashboardMetrics(null);
 }
 
 // ===== WORKLOAD MANAGEMENT =====
@@ -342,6 +531,9 @@ async function saveWorkload() {
     const portEnd = parseInt(document.getElementById('test-port-end').value);
     const community = document.getElementById('test-community').value;
     const timeout = parseInt(document.getElementById('test-timeout').value);
+    const concurrency = parseInt(document.getElementById('test-concurrency').value);
+    const intervalSeconds = parseInt(document.getElementById('test-interval').value);
+    const durationSeconds = parseInt(document.getElementById('test-duration').value);
 
     const oids = oidsText
         .split('\n')
@@ -366,6 +558,9 @@ async function saveWorkload() {
                 port_end: portEnd,
                 community: community,
                 timeout: timeout,
+                concurrency: concurrency,
+                interval_seconds: intervalSeconds,
+                duration_seconds: durationSeconds,
             }),
         });
 
@@ -398,6 +593,15 @@ async function loadWorkloadAndSwitch(name) {
         document.getElementById('test-port-end').value = workload.port_end;
         document.getElementById('test-community').value = workload.community;
         document.getElementById('test-timeout').value = workload.timeout;
+        if (workload.concurrency) {
+            document.getElementById('test-concurrency').value = workload.concurrency;
+        }
+        if (workload.interval_seconds) {
+            document.getElementById('test-interval').value = workload.interval_seconds;
+        }
+        if (workload.duration_seconds) {
+            document.getElementById('test-duration').value = workload.duration_seconds;
+        }
 
         // Switch to test tab
         switchTab('test');

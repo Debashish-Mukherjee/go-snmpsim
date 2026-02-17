@@ -121,9 +121,10 @@ docker-start: docker
 		-p 20000-30000:20000-30000/udp \
 		-p 8080:8080 \
 		-v $(PWD)/config:/app/config \
+		-v $(PWD)/examples/data:/app/data:ro \
 		-e GOMAXPROCS=4 \
 		$(DOCKER_IMAGE):$(DOCKER_TAG) \
-		-port-start=20000 -port-end=30000 -devices=100 -web-port=8080 -listen=0.0.0.0
+		-port-start=20000 -port-end=30000 -devices=100 -web-port=8080 -listen=0.0.0.0 -snmprec=/app/data/cisco-iosxr-001.snmprec
 	@echo "✓ Simulator started (100 devices on ports 20000-30000, Web UI on 8080)"
 	docker ps | grep $(DOCKER_CONTAINER)
 

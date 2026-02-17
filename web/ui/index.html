@@ -17,8 +17,6 @@
         <nav class="tabs">
             <button class="tab-btn active" data-tab="dashboard">📊 Dashboard</button>
             <button class="tab-btn" data-tab="test">🔍 Test SNMP</button>
-            <button class="tab-btn" data-tab="workloads">⚙️ Workloads</button>
-            <button class="tab-btn" data-tab="config">⚡ Configuration</button>
         </nav>
 
         <!-- Dashboard Tab -->
@@ -111,6 +109,30 @@
 
         <!-- Test SNMP Tab -->
         <div id="test" class="tab-panel">
+            <!-- Workloads Section (Top) -->
+            <div class="panel">
+                <h2>📦 Workloads</h2>
+                <div class="grid-2">
+                    <div>
+                        <div class="form-group">
+                            <label>Workload Name:</label>
+                            <input type="text" id="workload-name" placeholder="e.g., Production 48-Port Switch">
+                        </div>
+                        <div class="form-group">
+                            <label>Description:</label>
+                            <textarea id="workload-description" rows="3" placeholder="Describe this test scenario"></textarea>
+                        </div>
+                        <button id="btn-save-workload" class="btn btn-primary">💾 Save Workload</button>
+                    </div>
+                    <div>
+                        <h3>Saved Workloads</h3>
+                        <div id="saved-workloads" class="workload-list">
+                            <!-- Populated by JavaScript -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="grid-2">
                 <!-- Test Configuration -->
                 <div class="panel">
@@ -153,6 +175,21 @@
                     </div>
 
                     <div class="form-group">
+                        <label>Concurrency (parallel devices):</label>
+                        <input type="number" id="test-concurrency" value="50" min="1" max="1000">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Interval (seconds):</label>
+                        <input type="number" id="test-interval" value="5" min="1" max="300">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Duration (seconds):</label>
+                        <input type="number" id="test-duration" value="120" min="5" max="3600">
+                    </div>
+
+                    <div class="form-group">
                         <label>Max Repeaters (for BULKWALK):</label>
                         <input type="number" id="test-repeaters" value="10" min="1" max="100">
                     </div>
@@ -164,9 +201,9 @@
                     <div id="test-status" class="test-status"></div>
                 </div>
 
-                <!-- Quick Workloads -->
+                <!-- Quick Start Workloads -->
                 <div class="panel">
-                    <h2>Quick Start</h2>
+                    <h2>⚡ Quick Start</h2>
                     <p class="info">Load a saved workload to quickly start testing:</p>
                     <div id="workload-list" class="workload-quick-list">
                         <!-- Populated by JavaScript -->
@@ -177,6 +214,43 @@
             <!-- Test Results -->
             <div class="panel">
                 <h2>📋 Test Results</h2>
+                
+                <div id="live-progress" style="display:none; margin-bottom: 2rem;">
+                    <div class="progress-container">
+                        <div class="progress-header">
+                            <span id="progress-iter" class="progress-stat">Iter 0/0</span>
+                            <span id="progress-rate" class="progress-stat">Rate: 0/s</span>
+                            <span id="progress-success" class="progress-stat">✅ 0</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar" id="progress-fill"></div>
+                        </div>
+                        <div class="progress-time">
+                            <span id="progress-elapsed">Elapsed: 0s</span>
+                            <span id="progress-remaining">Remaining: 0s</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="last-results-window" style="display:none; margin-bottom: 2rem;">
+                    <h3>📡 Live Results (Last 20)</h3>
+                    <div class="results-live-container">
+                        <table class="live-results-table">
+                            <thead>
+                                <tr>
+                                    <th>Port</th>
+                                    <th width="35%">OID</th>
+                                    <th>Status</th>
+                                    <th width="25%">Value</th>
+                                    <th>Latency</th>
+                                </tr>
+                            </thead>
+                            <tbody id="live-results-tbody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
                 <div id="results-summary" class="results-summary" style="display:none;">
                     <div class="grid-4">
                         <div class="result-stat">
@@ -232,83 +306,6 @@
                 <div id="results-empty" class="results-empty">
                     <p>No test results yet. Configure and run a test above.</p>
                 </div>
-            </div>
-        </div>
-
-        <!-- Workloads Tab -->
-        <div id="workloads" class="tab-panel">
-            <div class="grid-2">
-                <!-- Save New Workload -->
-                <div class="panel">
-                    <h2>Save Current Test as Workload</h2>
-                    <div class="form-group">
-                        <label>Workload Name:</label>
-                        <input type="text" id="workload-name" placeholder="e.g., Production 48-Port Switch">
-                    </div>
-                    <div class="form-group">
-                        <label>Description:</label>
-                        <textarea id="workload-description" rows="3" placeholder="Describe this test scenario"></textarea>
-                    </div>
-                    <button id="btn-save-workload" class="btn btn-primary">💾 Save Workload</button>
-                </div>
-
-                <!-- Manage Workloads -->
-                <div class="panel">
-                    <h2>Saved Workloads</h2>
-                    <div id="saved-workloads" class="workload-list">
-                        <!-- Populated by JavaScript -->
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Configuration Tab -->
-        <div id="config" class="tab-panel">
-            <div class="panel">
-                <h2>Simulator Configuration</h2>
-                <div class="grid-2">
-                    <div class="config-item">
-                        <h3>OID Database</h3>
-                        <ul>
-                            <li>✅ Radix tree structure for O(log n) lookups</li>
-                            <li>✅ Pre-built index for fast traversal</li>
-                            <li>✅ Support for 1,000,000+ OIDs</li>
-                            <li>✅ Device-specific overlays</li>
-                        </ul>
-                    </div>
-                    <div class="config-item">
-                        <h3>SNMP Protocol</h3>
-                        <ul>
-                            <li>✅ SNMPv2c full support</li>
-                            <li>✅ GET, GETNEXT, GETBULK operations</li>
-                            <li>✅ SET operations supported</li>
-                            <li>✅ Zabbix LLD optimized</li>
-                        </ul>
-                    </div>
-                    <div class="config-item">
-                        <h3>Performance</h3>
-                        <ul>
-                            <li>✅ 10,000+ PDU/sec per port</li>
-                            <li>✅ &lt;100ms response for Zabbix LLD</li>
-                            <li>✅ O(log n) OID lookups</li>
-                            <li>✅ 1,000+ simultaneous devices</li>
-                        </ul>
-                    </div>
-                    <div class="config-item">
-                        <h3>Features</h3>
-                        <ul>
-                            <li>✅ Template expansion (#1-48 syntax)</li>
-                            <li>✅ Device-specific mappings (@port)</li>
-                            <li>✅ Table structure detection</li>
-                            <li>✅ Graceful shutdown with context</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-
-            <div class="panel">
-                <h2>System Information</h2>
-                <pre id="system-info">Loading...</pre>
             </div>
         </div>
     </div>

@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  # PostgreSQL 15 Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: zabbix-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: zabbix
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: zabbix_password_123!
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - zabbix_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zabbix"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - zabbix_network
+
+  # Zabbix Server
+  zabbix-server:
+    image: zabbix/zabbix-server-pgsql:latest
+    container_name: zabbix-server
+    restart: unless-stopped
+    ports:
+      - "10051:10051"
+    environment:
+      DB_SERVER_HOST: postgres
+      POSTGRES_DB: zabbix
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: zabbix_password_123!
+      ZBX_CACHESIZE: 512M
+      ZBX_TRENDCACHESIZE: 256M
+      ZBX_MAXHOUSEKEEPERDELETE: 10000
+      ZBX_PROBLEMINHIBITTIMEOUT: 300
+      ZBX_STARTPOLLERS: 16
+      ZBX_STARTPOLLERSUNREACHABLE: 4
+      ZBX_STARTDISCOVERERS: 4
+      ZBX_HOUSEKEEPERENABLEAUTOHOUSEKEEPING: 1
+      ZBX_HOUSEKEEPINGFREQUENCY: 1
+      ZBX_MAXHOUSEKEEPER_INTERVAL: 4h
+      ZBX_SNMP_TRAPS_FILE_NAME: /var/log/snmptrapd.log
+      ZBX_STARTPREPROCESSORS: 4
+      ZBX_HISTORYSTORAGEURL: ''
+      ZBX_HISTORYSTORAGETYPES: "history,trends"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -tln | grep 10051 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    volumes:
+      - zabbix_server_logs:/var/log/zabbix
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - zabbix_network
+
+  # Zabbix Frontend (Web UI)
+  zabbix-frontend:
+    image: zabbix/zabbix-web-nginx-pgsql:latest
+    container_name: zabbix-frontend
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    environment:
+      DB_SERVER_HOST: postgres
+      POSTGRES_DB: zabbix
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: zabbix_password_123!
+      ZBX_SERVER_HOST: zabbix-server
+      ZBX_SERVER_PORT: 10051
+      PHP_TZ: UTC
+      ZBX_SESSION_NAME: ZBXSESSID
+      ZBX_MAXEXECUTIONTIME: 600
+      ZBX_MEMORYLIMIIT: 256M
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - zabbix_network
+
+  # Note: SNMP Traps Receiver disabled - use standard Zabbix SNMP polling instead
+
+volumes:
+  zabbix_postgres_data:
+  zabbix_server_logs:
+
+networks:
+  zabbix_network:
+    driver: bridge

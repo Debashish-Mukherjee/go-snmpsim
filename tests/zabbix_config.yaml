@@ -1,0 +1,194 @@
+# Zabbix 7.4 Integration Test Configuration
+# Updated: 2024
+
+zabbix:
+  # Zabbix server configuration
+  url: http://localhost:8081
+  api_url: http://localhost:8081/api_jsonrpc.php
+  username: Admin
+  password: zabbix
+  
+  # Server configuration
+  server_port: 10051
+  server_timeout: 30
+  
+  # Database
+  database: zabbix
+  db_user: zabbix
+  db_password: zabbix_password_123!
+
+snmp:
+  # SNMP Simulator configuration
+  simulator_host: 127.0.0.1
+  port_start: 20000
+  port_end: 20019
+  community: public
+  version: "2"
+  timeout: 5
+  retries: 3
+  
+  # Device simulation properties
+  devices:
+    count: 20
+    type: cisco-iosxr
+    metric_per_device: 1750
+
+polling:
+  # Polling configuration
+  interval: "5m"  # 5 minutes
+  interval_seconds: 300
+  
+  # Test parameters
+  max_retries: 3
+  retry_interval: 10  # seconds between retries
+  
+  # Timing
+  initial_wait: 60  # Wait before checking for first metrics (seconds)
+  metric_check_timeout: 600  # Max time to wait for metrics (seconds)
+  max_polling_cycles: 10  # Number of polling cycles to wait
+
+test:
+  # Test configuration
+  test_name: "Zabbix 7.4 + Cisco IOS XR SNMPSIM Integration"
+  description: "Simulate 20 Cisco IOS XR devices with 1750 metrics each using SNMP"
+  
+  # Target metrics to verify
+  target_metrics:
+    system_metrics:
+      - sysUpTime
+      - sysDescr
+      - sysName
+    
+    interface_metrics:
+      - ifIndex
+      - ifDescr
+      - ifInOctets
+      - ifOutOctets
+      - ifInErrors
+      - ifOutErrors
+      - ifOperStatus
+    
+    cpu_metrics:
+      - CPU 1-minute
+      - CPU 5-minute
+      - CPU average
+    
+    memory_metrics:
+      - Memory used
+      - Memory free
+    
+    storage_metrics:
+      - Storage used
+      - Storage free
+  
+  # Success criteria
+  success_criteria:
+    min_items_per_device: 1700
+    min_devices_with_data: 18  # 90% of 20
+    min_metric_success_rate: 0.95
+    max_polling_wait_cycles: 5
+
+docker:
+  # Docker/Compose configuration
+  compose_file: zabbix/docker-compose.zabbix.yml
+  
+  # Service names
+  postgres_service: postgres
+  zabbix_server_service: zabbix-server
+  zabbix_frontend_service: zabbix-frontend
+  
+  # Container names
+  postgres_container: zabbix-postgres
+  server_container: zabbix-server
+  frontend_container: zabbix-frontend
+  
+  # Health check timeouts
+  startup_timeout: 60
+  readiness_timeout: 120
+  health_check_interval: 5
+
+logging:
+  # Logging configuration
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "zabbix_test.log"
+  console: true
+
+performance:
+  # Performance testing parameters
+  concurrent_devices: 20
+  metrics_per_request: 100
+  batch_size: 10
+  
+  # Metrics collection performance
+  expected_collection_rate: 0.95  # 95% of metrics should be collected
+  expected_response_time: 2000  # ms per host
+
+# Pre-defined test scenarios
+scenarios:
+  
+  full_scale:
+    description: "Full-scale test with 20 devices, 5-minute polling"
+    device_count: 20
+    polling_interval: "5m"
+    duration_minutes: 30
+    expected_metrics: 35000  # 20 devices × 1750 metrics
+  
+  small_scale:
+    description: "Small-scale test with 5 devices, 30-second polling"
+    device_count: 5
+    polling_interval: "30s"
+    duration_minutes: 10
+    expected_metrics: 8750  # 5 devices × 1750 metrics
+  
+  medium_scale:
+    description: "Medium-scale test with 10 devices, 2-minute polling"
+    device_count: 10
+    polling_interval: "2m"
+    duration_minutes: 20
+    expected_metrics: 17500  # 10 devices × 1750 metrics
+
+# Verification steps
+verification:
+  steps:
+    - name: "Check Zabbix server is running"
+      timeout: 30
+    
+    - name: "Authenticate with API"
+      timeout: 10
+    
+    - name: "Create host group if not exists"
+      timeout: 10
+    
+    - name: "Add SNMP devices"
+      timeout: 60
+    
+    - name: "Wait for initial metric collection"
+      timeout: 300
+    
+    - name: "Verify item data is being collected"
+      timeout: 60
+    
+    - name: "Check polling interval configuration"
+      timeout: 10
+    
+    - name: "Generate metrics collection report"
+      timeout: 30
+
+# Reporting
+report:
+  # Report generation
+  format: json
+  include_timestamps: true
+  include_raw_metrics: false
+  
+  # Metrics to include in report
+  report_metrics:
+    - device_count
+    - items_created
+    - items_with_data
+    - success_rate
+    - avg_response_time
+    - polling_intervals
+    - last_collection_time
+    - test_duration

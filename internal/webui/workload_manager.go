@@ -23,6 +23,9 @@ type Workload struct {
 	Community     string    `json:"community"`
 	Timeout       int       `json:"timeout"`
 	MaxRepeaters  int       `json:"max_repeaters"`
+	Concurrency   int       `json:"concurrency"`
+	IntervalSec   int       `json:"interval_seconds"`
+	DurationSec   int       `json:"duration_seconds"`
 	SNMPrecFile   string    `json:"snmprec_file"`
 	SimulatorPath int       `json:"simulator_path"` // Port where simulator listens
 	CreatedAt     time.Time `json:"created_at"`
@@ -189,6 +192,9 @@ func DefaultWorkloads() []Workload {
 			DeviceCount: 10,
 			Community:   "public",
 			Timeout:     5,
+			Concurrency: 20,
+			IntervalSec: 5,
+			DurationSec: 60,
 		},
 		{
 			Name:        "Interface Metrics",
@@ -205,6 +211,9 @@ func DefaultWorkloads() []Workload {
 			Community:    "public",
 			Timeout:      5,
 			MaxRepeaters: 10,
+			Concurrency:  5,
+			IntervalSec:  5,
+			DurationSec:  30,
 		},
 		{
 			Name:        "Full System Walk",
@@ -218,6 +227,9 @@ func DefaultWorkloads() []Workload {
 			DeviceCount: 1,
 			Community:   "public",
 			Timeout:     10,
+			Concurrency: 1,
+			IntervalSec: 5,
+			DurationSec: 30,
 		},
 		{
 			Name:        "48-Port Switch Test",

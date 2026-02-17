@@ -209,6 +209,10 @@ func (s *Server) handleSNMPTest(w http.ResponseWriter, r *http.Request) {
 		Community    string   `json:"community"`
 		Timeout      int      `json:"timeout"`
 		MaxRepeaters int      `json:"max_repeaters"`
+		Concurrency  int      `json:"concurrency"`
+		Iterations   int      `json:"iterations"`
+		IntervalSec  int      `json:"interval_seconds"`
+		DurationSec  int      `json:"duration_seconds"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
