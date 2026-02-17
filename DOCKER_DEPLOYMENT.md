@@ -10,25 +10,26 @@ This guide explains how to deploy the Go SNMP Simulator using Docker and Docker 
 
 ## Quick Start
 
-### Option 1: Using Docker Compose (Recommended)
+### Using Makefile (Recommended)
 
 ```bash
-# Build and start the simulator with web UI
-docker-compose up -d
+# Build and start the simulator with Alpine Linux base
+make docker-start
 
 # View logs
-docker-compose logs -f snmpsim
+make docker-logs
 
-# Stop the simulator
-docker-compose down
+# Stop the simulator and clean up
+make docker-stop
 ```
 
 **Access points:**
 
 - Web Dashboard: `http://localhost:8080`
 - SNMP Ports: `localhost:20000-30000` (UDP)
+- Container name: `snmpsim-alpine`
 
-### Option 2: Using Docker CLI
+### Using Docker CLI Directly
 
 ```bash
 # Build the image
@@ -36,18 +37,18 @@ docker build -t go-snmpsim:latest .
 
 # Run the container
 docker run -d \
-  --name snmpsim \
+  --name snmpsim-alpine \
   -p 8080:8080 \
   -p 20000-30000:20000-30000/udp \
   -v $(pwd)/config:/app/config \
   go-snmpsim:latest
 
 # View logs
-docker logs -f snmpsim
+docker logs -f snmpsim-alpine
 
 # Stop the container
-docker stop snmpsim
-docker rm snmpsim
+docker stop snmpsim-alpine
+docker rm snmpsim-alpine
 ```
 
 ## Usage Examples
