@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SNMP Simulator - Dashboard</title>
+    <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔧 SNMP Simulator Dashboard</h1>
+            <p class="subtitle">High-performance SNMP device simulator & monitoring</p>
+        </header>
+
+        <!-- Main Tabs -->
+        <nav class="tabs">
+            <button class="tab-btn active" data-tab="dashboard">📊 Dashboard</button>
+            <button class="tab-btn" data-tab="test">🔍 Test SNMP</button>
+            <button class="tab-btn" data-tab="workloads">⚙️ Workloads</button>
+            <button class="tab-btn" data-tab="config">⚡ Configuration</button>
+        </nav>
+
+        <!-- Dashboard Tab -->
+        <div id="dashboard" class="tab-panel active">
+            <div class="grid-2">
+                <!-- Status Panel -->
+                <div class="panel">
+                    <h2>Simulator Status</h2>
+                    <div class="status-grid">
+                        <div class="status-item">
+                            <span class="label">Status:</span>
+                            <span id="status-indicator" class="badge badge-stopped">Stopped</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="label">Devices:</span>
+                            <span id="status-devices">0</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="label">Port Range:</span>
+                            <span id="status-ports">-</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="label">Listen Address:</span>
+                            <span id="status-address">-</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="label">Uptime:</span>
+                            <span id="status-uptime">-</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="label">Total Polls:</span>
+                            <span id="status-polls">0</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="label">Avg Latency:</span>
+                            <span id="status-latency">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Control Panel -->
+                <div class="panel">
+                    <h2>Controls</h2>
+                    <div class="form-group">
+                        <label>Port Start:</label>
+                        <input type="number" id="config-port-start" value="20000" min="20000" max="30000">
+                    </div>
+                    <div class="form-group">
+                        <label>Port End:</label>
+                        <input type="number" id="config-port-end" value="20009" min="20000" max="30000">
+                    </div>
+                    <div class="form-group">
+                        <label>Number of Devices:</label>
+                        <input type="number" id="config-devices" value="10" min="1" max="1000">
+                    </div>
+                    <div class="form-group">
+                        <label>Listen Address:</label>
+                        <input type="text" id="config-listen" value="0.0.0.0">
+                    </div>
+                    <div class="button-group">
+                        <button id="btn-start" class="btn btn-primary">▶️ Start</button>
+                        <button id="btn-stop" class="btn btn-danger" disabled>⏹️ Stop</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Metrics Panel -->
+            <div class="panel">
+                <h2>📈 Metrics</h2>
+                <div class="grid-4">
+                    <div class="metric">
+                        <div class="metric-value" id="metric-success">0</div>
+                        <div class="metric-label">Successful Polls</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value" id="metric-failed">0</div>
+                        <div class="metric-label">Failed Polls</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value" id="metric-avg">0ms</div>
+                        <div class="metric-label">Avg Response Time</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value" id="metric-rate">0%</div>
+                        <div class="metric-label">Success Rate</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Test SNMP Tab -->
+        <div id="test" class="tab-panel">
+            <div class="grid-2">
+                <!-- Test Configuration -->
+                <div class="panel">
+                    <h2>Configure Test</h2>
+                    
+                    <div class="form-group">
+                        <label>Test Type:</label>
+                        <select id="test-type">
+                            <option value="get">GET - Single OID value</option>
+                            <option value="getnext">GETNEXT - Next OID in sequence</option>
+                            <option value="bulkwalk">BULKWALK - Efficient table walk (Zabbix)</option>
+                            <option value="walk">WALK - Full subtree walk</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>OIDs to Test (one per line):</label>
+                        <textarea id="test-oids" rows="6" placeholder="1.3.6.1.2.1.1.1.0
+1.3.6.1.2.1.1.3.0
+1.3.6.1.2.1.1.5.0"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Port Range:</label>
+                        <div class="input-inline">
+                            <input type="number" id="test-port-start" value="20000" placeholder="Start" style="width: 48%;">
+                            <span style="margin: 0 2%;">to</span>
+                            <input type="number" id="test-port-end" value="20009" placeholder="End" style="width: 48%;">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Community String:</label>
+                        <input type="text" id="test-community" value="public">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Timeout (seconds):</label>
+                        <input type="number" id="test-timeout" value="5" min="1" max="30">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Max Repeaters (for BULKWALK):</label>
+                        <input type="number" id="test-repeaters" value="10" min="1" max="100">
+                    </div>
+
+                    <div class="button-group">
+                        <button id="btn-run-test" class="btn btn-primary">▶️ Run Tests</button>
+                        <button id="btn-clear-results" class="btn btn-secondary">Clear Results</button>
+                    </div>
+                    <div id="test-status" class="test-status"></div>
+                </div>
+
+                <!-- Quick Workloads -->
+                <div class="panel">
+                    <h2>Quick Start</h2>
+                    <p class="info">Load a saved workload to quickly start testing:</p>
+                    <div id="workload-list" class="workload-quick-list">
+                        <!-- Populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Test Results -->
+            <div class="panel">
+                <h2>📋 Test Results</h2>
+                <div id="results-summary" class="results-summary" style="display:none;">
+                    <div class="grid-4">
+                        <div class="result-stat">
+                            <div class="stat-value" id="result-total">0</div>
+                            <div class="stat-label">Total Tests</div>
+                        </div>
+                        <div class="result-stat">
+                            <div class="stat-value" id="result-success">0</div>
+                            <div class="stat-label">Successful</div>
+                        </div>
+                        <div class="result-stat">
+                            <div class="stat-value" id="result-failed">0</div>
+                            <div class="stat-label">Failed</div>
+                        </div>
+                        <div class="result-stat">
+                            <div class="stat-value" id="result-rate">0%</div>
+                            <div class="stat-label">Success Rate</div>
+                        </div>
+                    </div>
+                    <div class="grid-3" style="margin-top: 1rem;">
+                        <div class="result-stat">
+                            <div class="stat-value" id="result-avg">0ms</div>
+                            <div class="stat-label">Avg Latency</div>
+                        </div>
+                        <div class="result-stat">
+                            <div class="stat-value" id="result-min">0ms</div>
+                            <div class="stat-label">Min Latency</div>
+                        </div>
+                        <div class="result-stat">
+                            <div class="stat-value" id="result-max">0ms</div>
+                            <div class="stat-label">Max Latency</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="results-table-container" style="display:none; margin-top: 1rem;">
+                    <table class="results-table">
+                        <thead>
+                            <tr>
+                                <th>Port</th>
+                                <th>OID</th>
+                                <th>Status</th>
+                                <th>Value</th>
+                                <th>Type</th>
+                                <th>Latency (ms)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="results-tbody">
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="results-empty" class="results-empty">
+                    <p>No test results yet. Configure and run a test above.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Workloads Tab -->
+        <div id="workloads" class="tab-panel">
+            <div class="grid-2">
+                <!-- Save New Workload -->
+                <div class="panel">
+                    <h2>Save Current Test as Workload</h2>
+                    <div class="form-group">
+                        <label>Workload Name:</label>
+                        <input type="text" id="workload-name" placeholder="e.g., Production 48-Port Switch">
+                    </div>
+                    <div class="form-group">
+                        <label>Description:</label>
+                        <textarea id="workload-description" rows="3" placeholder="Describe this test scenario"></textarea>
+                    </div>
+                    <button id="btn-save-workload" class="btn btn-primary">💾 Save Workload</button>
+                </div>
+
+                <!-- Manage Workloads -->
+                <div class="panel">
+                    <h2>Saved Workloads</h2>
+                    <div id="saved-workloads" class="workload-list">
+                        <!-- Populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Configuration Tab -->
+        <div id="config" class="tab-panel">
+            <div class="panel">
+                <h2>Simulator Configuration</h2>
+                <div class="grid-2">
+                    <div class="config-item">
+                        <h3>OID Database</h3>
+                        <ul>
+                            <li>✅ Radix tree structure for O(log n) lookups</li>
+                            <li>✅ Pre-built index for fast traversal</li>
+                            <li>✅ Support for 1,000,000+ OIDs</li>
+                            <li>✅ Device-specific overlays</li>
+                        </ul>
+                    </div>
+                    <div class="config-item">
+                        <h3>SNMP Protocol</h3>
+                        <ul>
+                            <li>✅ SNMPv2c full support</li>
+                            <li>✅ GET, GETNEXT, GETBULK operations</li>
+                            <li>✅ SET operations supported</li>
+                            <li>✅ Zabbix LLD optimized</li>
+                        </ul>
+                    </div>
+                    <div class="config-item">
+                        <h3>Performance</h3>
+                        <ul>
+                            <li>✅ 10,000+ PDU/sec per port</li>
+                            <li>✅ &lt;100ms response for Zabbix LLD</li>
+                            <li>✅ O(log n) OID lookups</li>
+                            <li>✅ 1,000+ simultaneous devices</li>
+                        </ul>
+                    </div>
+                    <div class="config-item">
+                        <h3>Features</h3>
+                        <ul>
+                            <li>✅ Template expansion (#1-48 syntax)</li>
+                            <li>✅ Device-specific mappings (@port)</li>
+                            <li>✅ Table structure detection</li>
+                            <li>✅ Graceful shutdown with context</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>System Information</h2>
+                <pre id="system-info">Loading...</pre>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>🚀 SNMP Simulator v1.0.0 | <a href="https://github.com/debashish-mukherjee/go-snmpsim">GitHub</a> | <a href="#">Documentation</a></p>
+    </footer>
+
+    <script src="/assets/app.js"></script>
+</body>
+</html>

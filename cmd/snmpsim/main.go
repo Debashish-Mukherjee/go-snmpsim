@@ -8,7 +8,9 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/debashish-mukherjee/go-snmpsim/internal/api"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/engine"
+	"github.com/debashish-mukherjee/go-snmpsim/internal/webui"
 )
 
 func main() {
@@ -18,14 +20,16 @@ func main() {
 	devices := flag.Int("devices", 100, "Number of virtual devices to simulate")
 	snmprecFile := flag.String("snmprec", "", "Path to .snmprec file for OID templates")
 	listenAddr := flag.String("listen", "0.0.0.0", "Listen address")
+	webPort := flag.String("web-port", "8080", "Port for web UI API server")
 	flag.Parse()
 
 	// Check file descriptors
 	checkFileDescriptors(*portEnd - *portStart)
 
 	log.Printf("Starting SNMP Simulator")
-	log.Printf("Port range: %d-%d", *portStart, *portEnd)
+	log.Printf("SNMP Port range: %d-%d", *portStart, *portEnd)
 	log.Printf("Number of devices: %d", *devices)
+	log.Printf("Web UI port: %s (http://localhost:%s)", *webPort, *webPort)
 
 	// Create simulator
 	simulator, err := engine.NewSimulator(
@@ -42,6 +46,24 @@ func main() {
 	// Create context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Initialize workload manager
+	workloadManager := webui.NewWorkloadManager("config/workloads")
+
+	// Create API server
+	apiServer := api.NewServer(":" + *webPort)
+	apiServer.SetSimulator(simulator)
+	apiServer.SetSimulatorStatus(*portStart, *portEnd, *devices, *listenAddr, "just-started")
+	apiServer.SetWorkloadManager(workloadManager)
+	apiServer.SetSNMPTester(webui.NewSNMPTester())
+
+	// Start API server in goroutine
+	go func() {
+		log.Printf("Starting web UI server on http://localhost:%s", *webPort)
+		if err := apiServer.Start(); err != nil {
+			log.Printf("Warning: Web UI server error: %v", err)
+		}
+	}()
 
 	// Handle shutdown signals
 	sigChan := make(chan os.Signal, 1)
@@ -62,8 +84,9 @@ func main() {
 	<-ctx.Done()
 
 	log.Printf("Shutting down...")
+	apiServer.Stop()
 	simulator.Stop()
-	log.Printf("Simulator stopped")
+	log.Printf("Graceful shutdown complete")
 }
 
 func checkFileDescriptors(requiredFDs int) {
