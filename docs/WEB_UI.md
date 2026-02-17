@@ -5,6 +5,7 @@ Go SNMPSim includes a modern web-based dashboard for managing and testing the SN
 ## Overview
 
 The Web UI provides:
+
 - **Simulator Status Monitoring** - Real-time status of running simulator instance
 - **SNMP Testing** - Execute SNMP GET, BULKWALK, and WALK operations on simulated devices
 - **Workload Management** - Save, load, and manage test configurations
@@ -47,6 +48,7 @@ The dashboard is accessible from any machine on your network if the simulator is
 ### Dashboard Tab
 
 **Status Panel:**
+
 - Current simulator state (Running/Stopped)
 - Number of virtual devices
 - Listening address and port range
@@ -54,11 +56,13 @@ The dashboard is accessible from any machine on your network if the simulator is
 - Total polls and average response latency
 
 **Control Panel:**
+
 - Port range configuration (start/end)
 - Device count
 - Listener address configuration
 
 **Metrics:**
+
 - Successful SNMP polls
 - Failed SNMP polls
 - Average latency
@@ -67,6 +71,7 @@ The dashboard is accessible from any machine on your network if the simulator is
 ### Test SNMP Tab
 
 **Configuration:**
+
 - Test Type: GET, GETNEXT, BULKWALK, or WALK
 - OID List: Multi-line OID input (one OID per line)
 - Port Range: Start and end ports to test
@@ -75,10 +80,12 @@ The dashboard is accessible from any machine on your network if the simulator is
 - Max Repeaters: For BULKWALK operations
 
 **Quick Workloads:**
+
 - Launch pre-configured test workloads
 - Includes common test scenarios out-of-the-box
 
 **Results:**
+
 - Summary statistics (total, successful, failed, success rate)
 - Latency metrics (average, minimum, maximum)
 - Detailed results table showing:
@@ -92,16 +99,19 @@ The dashboard is accessible from any machine on your network if the simulator is
 ### Workloads Tab
 
 **Save Current Configuration:**
+
 - Name the current test configuration
 - Add description
 - Save to disk for reuse
 
 **Manage Saved Workloads:**
+
 - View all saved workload configurations
 - Load workload (populates test configuration)
 - Delete workload
 
 **Default Workloads:**
+
 1. **Basic System OIDs** - System description, uptime, services
 2. **Interface Metrics** - Interface descriptions and octets counters
 3. **Full System Walk** - Complete system subtree walk
@@ -119,11 +129,13 @@ The dashboard is accessible from any machine on your network if the simulator is
 ### Frontend
 
 Located in `web/ui/` and `web/assets/`:
+
 - **index.html** - Dashboard UI with 4 main tabs
 - **style.css** - Professional dark-theme styling with responsive layout
 - **app.js** - JavaScript client for API communication and interactivity
 
 **Features:**
+
 - No build dependencies - pure HTML/CSS/JavaScript
 - Mobile-responsive design
 - Real-time status polling (updates every 2 seconds)
@@ -135,7 +147,9 @@ Located in `web/ui/` and `web/assets/`:
 Located in `internal/api/` and `internal/webui/`:
 
 #### API Server (`internal/api/server.go`)
+
 REST endpoints:
+
 - `GET /api/status` - Current simulator metrics
 - `POST /api/start` - Start simulator with parameters
 - `POST /api/stop` - Stop simulator
@@ -147,7 +161,9 @@ REST endpoints:
 - `GET /api/test/results` - Retrieve last test results
 
 #### SNMP Tester (`internal/webui/snmp_tester.go`)
+
 Executes SNMP operations:
+
 - Spawns `snmpget` and `snmpwalk` commands from net-snmp tools
 - Supports GET, BULKWALK, and WALK operations
 - Calculates latency statistics
@@ -155,7 +171,9 @@ Executes SNMP operations:
 - Returns detailed results with timestamps and error summaries
 
 #### Workload Manager (`internal/webui/workload_manager.go`)
+
 Manages test configurations:
+
 - Persists workloads to disk as JSON files (in `config/workloads/`)
 - In-memory caching with disk synchronization
 - CRUD operations for workload configurations
@@ -165,6 +183,7 @@ Manages test configurations:
 ## Requirements
 
 ### System Requirements
+
 - Go 1.16 or higher
 - Linux/Unix system (uses UDP sockets)
 - File descriptor limit: at least (port_range + 200) open files
@@ -193,12 +212,14 @@ brew install net-snmp
 ## Security Considerations
 
 **MVP Limitations (v1.0):**
+
 - No authentication/authorization
 - No HTTPS/TLS (should be added for production)
 - SNMP community string transmitted over HTTP
 - No rate limiting
 
 **Recommendations for Production:**
+
 1. Run behind a reverse proxy with HTTPS
 2. Implement authentication (API keys, OAuth, etc.)
 3. Add authorization levels (read-only, test-only, admin)
@@ -209,12 +230,14 @@ brew install net-snmp
 ## Troubleshooting
 
 ### Web UI Not Accessible
+
 - Verify simulator is running: `./snmpsim -web-port 8080`
 - Check if port is in use: `netstat -an | grep 8080`
 - Check firewall rules if accessing from another machine
 - Verify binding address: `./snmpsim -listen 0.0.0.0`
 
 ### SNMP Tests Failing
+
 - Verify simulator is actually running (status shows "Running")
 - Check that snmpget/snmpwalk are installed and in PATH
 - Verify port range configuration matches running simulator
@@ -222,12 +245,14 @@ brew install net-snmp
 - Try individual ports first before testing ranges
 
 ### Tests Timeout
+
 - Increase timeout value in test configuration
 - Check network connectivity to localhost (127.0.0.1)
 - Verify simulator is not overloaded (check CPU/memory)
 - Try with fewer devices or ports in test range
 
 ### Workload Not Saving
+
 - Verify `config/workloads/` directory exists and is writable
 - Check file permissions: `ls -la config/`
 - Ensure disk has available space
@@ -299,6 +324,7 @@ fetch('/api/test/snmp', {
 ## Future Enhancements
 
 Planned improvements:
+
 - [ ] Real-time WebSocket updates (reduce polling)
 - [ ] Test result history and charts
 - [ ] Multiple simulator instances (load balancing)
@@ -347,5 +373,4 @@ To extend the Web UI:
 ## Support
 
 For issues or feature requests, please open an issue on GitHub:
-https://github.com/debashish-mukherjee/go-snmpsim
-
+<https://github.com/debashish-mukherjee/go-snmpsim>

@@ -20,8 +20,9 @@ GOOS ?= $(shell go env GOOS)
 # Docker variables
 DOCKER_IMAGE := go-snmpsim
 DOCKER_TAG := latest
+DOCKER_CONTAINER ?= snmpsim-alpine
 
-.PHONY: help build run clean test lint docker docker-run docker-compose docker-clean
+.PHONY: help build run clean test lint docker docker-start docker-stop docker-logs docker-clean
 
 help:
 	@echo "SNMP Simulator - Available targets:"
@@ -33,16 +34,15 @@ help:
 	@echo "  make lint            - Run linters"
 	@echo "  make fmt             - Format code"
 	@echo "  make docker          - Build Docker image"
-	@echo "  make docker-run      - Run in Docker container"
-	@echo "  make docker-compose  - Run with Docker Compose"
+	@echo "  make docker-start    - Start simulator in Docker container (detached)"
+	@echo "  make docker-stop     - Stop and remove simulator container"
+	@echo "  make docker-logs     - Show simulator container logs"
 	@echo "  make docker-clean    - Clean Docker artifacts"
 	@echo "  make install         - Install dependencies"
 	@echo "  make help            - Show this help message"
 	@echo ""
-	@echo "Docker Compose targets:"
-	@echo "  make logs            - Show Docker Compose logs"
-	@echo "  make stop            - Stop Docker Compose"
-	@echo "  make restart         - Restart Docker Compose"
+	@echo "Docker options:"
+	@echo "  DOCKER_CONTAINER     - Container name (default: $(DOCKER_CONTAINER))"
 	@echo ""
 
 ## Build Targets
@@ -114,39 +114,26 @@ docker: install
 	@echo "✓ Docker image built"
 	@docker images | grep $(DOCKER_IMAGE)
 
-docker-run: docker
-	@echo "Running Docker container..."
+docker-start: docker
+	@echo "Starting SNMP Simulator in Docker..."
 	docker run -d \
-		--name snmpsim \
+		--name $(DOCKER_CONTAINER) \
 		-p 20000-30000:20000-30000/udp \
+		-p 8080:8080 \
+		-v $(PWD)/config:/app/config \
 		-e GOMAXPROCS=4 \
-		$(DOCKER_IMAGE):$(DOCKER_TAG)
-	@echo "✓ Container started"
-	docker ps | grep snmpsim
+		$(DOCKER_IMAGE):$(DOCKER_TAG) \
+		-port-start=20000 -port-end=30000 -devices=100 -web-port=8080 -listen=0.0.0.0
+	@echo "✓ Simulator started (100 devices on ports 20000-30000, Web UI on 8080)"
+	docker ps | grep $(DOCKER_CONTAINER)
 
 docker-stop:
-	@echo "Stopping Docker container..."
-	docker stop snmpsim 2>/dev/null || true
-	docker rm snmpsim 2>/dev/null || true
-	@echo "✓ Container stopped"
+	@echo "Stopping SNMP Simulator container..."
+	docker rm -f $(DOCKER_CONTAINER) 2>/dev/null || true
+	@echo "✓ Container stopped and removed"
 
 docker-logs:
-	docker logs -f snmpsim
-
-docker-compose:
-	@echo "Starting with Docker Compose..."
-	docker-compose up -d
-	@echo "✓ Services started"
-	docker-compose ps
-
-logs:
-	docker-compose logs -f snmpsim
-
-stop:
-	docker-compose down
-
-restart:
-	docker-compose restart snmpsim
+	docker logs -f $(DOCKER_CONTAINER)
 
 docker-clean: docker-stop
 	@echo "Cleaning Docker images..."

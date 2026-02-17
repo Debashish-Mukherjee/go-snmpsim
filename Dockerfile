@@ -18,7 +18,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o snmpsim ./cmd/snmpsim
 
 # Final stage
-FROM alpine:latest
+FROM alpine:3.20
 
 # Install runtime dependencies including net-snmp tools for SNMP testing
 RUN apk --no-cache add \

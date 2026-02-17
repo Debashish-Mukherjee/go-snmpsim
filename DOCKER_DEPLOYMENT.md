@@ -24,6 +24,7 @@ docker-compose down
 ```
 
 **Access points:**
+
 - Web Dashboard: `http://localhost:8080`
 - SNMP Ports: `localhost:20000-30000` (UDP)
 
@@ -58,6 +59,7 @@ docker-compose up -d
 ```
 
 This starts:
+
 - 100 virtual SNMP devices on ports 20000-20099
 - Web UI on port 8080
 - Net-SNMP tools pre-installed for testing
@@ -77,6 +79,7 @@ command: [
 ```
 
 Then restart:
+
 ```bash
 docker-compose up -d --force-recreate
 ```
@@ -115,6 +118,7 @@ Web UI Configuration:
 ### Accessing the Dashboard
 
 1. Build and start with docker-compose:
+
    ```bash
    docker-compose up -d
    ```
@@ -206,11 +210,13 @@ ls -la ./config/workloads/
 ## Health Checks
 
 The container includes a health check that:
+
 - Checks HTTP endpoint every 30 seconds
 - Waits 5 seconds before first check
 - Fails after 3 consecutive failures
 
 **View health status:**
+
 ```bash
 docker ps  # Shows health status in output
 docker inspect snmpsim | grep -A 5 Health
@@ -281,6 +287,7 @@ environment:
 ```
 
 Or via CLI:
+
 ```bash
 docker run -e GOMAXPROCS=8 go-snmpsim:latest
 ```
@@ -288,6 +295,7 @@ docker run -e GOMAXPROCS=8 go-snmpsim:latest
 ### Network Optimization
 
 For best performance with many devices:
+
 - Increase system file descriptor limit: `ulimit -n 65536`
 - Use host network mode: `--network host` (Linux only)
 
@@ -306,6 +314,7 @@ docker run --network host go-snmpsim:latest
 ### Container Communication
 
 Containers can communicate via service name in docker-compose:
+
 ```bash
 # From inside client container
 snmpget -v 2c -c public snmpsim:20000 1.3.6.1.2.1.1.1.0
@@ -384,12 +393,16 @@ docker-compose logs snmpsim
 ### SNMP Tests Failing
 
 **In Web UI:**
+
 1. Check status shows "Running"
 2. Verify net-snmp tools are available:
+
    ```bash
    docker-compose exec snmpsim which snmpget
    ```
+
 3. Test manually:
+
    ```bash
    docker-compose exec snmpsim snmpget -v 2c -c public localhost:20000 1.3.6.1.2.1.1.1.0
    ```
@@ -434,6 +447,7 @@ docker stack deploy -c docker-compose.yml snmpsim
 ### Using Kubernetes
 
 Convert docker-compose to Kubernetes manifests:
+
 ```bash
 kompose convert -f docker-compose.yml -o k8s/
 ```
@@ -441,6 +455,7 @@ kompose convert -f docker-compose.yml -o k8s/
 ### Environment Variables
 
 Create `.env` file:
+
 ```
 PORT_START=20000
 PORT_END=30000
@@ -450,6 +465,7 @@ GOMAXPROCS=8
 ```
 
 Reference in docker-compose.yml:
+
 ```yaml
 command: [
   "-port-start=${PORT_START}",
@@ -498,6 +514,7 @@ server {
 ## Support
 
 For issues or questions:
+
 - Check Docker logs: `docker-compose logs`
 - Review this guide's troubleshooting section
-- Open an issue on GitHub: https://github.com/debashish-mukherjee/go-snmpsim
+- Open an issue on GitHub: <https://github.com/debashish-mukherjee/go-snmpsim>

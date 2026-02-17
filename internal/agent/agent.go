@@ -69,44 +69,46 @@ func (va *VirtualAgent) HandlePacket(packet []byte) []byte {
 			va.deviceID, va.port, count)
 	}
 
-	// Simple heuristic to detect request type from raw SNMP packet
-	// SNMP uses ASN.1 BER encoding; PDU type is in byte 4-5 range
-	var pduType byte
-	if len(packet) > 6 {
-		pduType = packet[5]
+	decoder := gosnmp.GoSNMP{Version: gosnmp.Version2c, Community: "public"}
+	req, err := decoder.SnmpDecodePacket(packet)
+	if err != nil {
+		log.Printf("Device %d: Failed to parse SNMP packet: %v", va.deviceID, err)
+		return nil
 	}
 
-	// Return appropriate response based on PDU type
-	switch pduType {
-	case 0xA1: // GetNext-Request
-		return va.handleGetNextRequest()
-	case 0xA3: // SetRequest (read-only, so error)
-		return va.handleSetRequest()
-	case 0xA4: // GetBulk-Request (v2c/v3)
-		return va.handleGetBulkRequest()
-	default: // GetRequest or unrecognized
-		return va.handleGetRequest()
+	switch req.PDUType {
+	case gosnmp.GetNextRequest:
+		return va.handleGetNextRequest(req)
+	case gosnmp.SetRequest:
+		return va.handleSetRequest(req)
+	case gosnmp.GetBulkRequest:
+		return va.handleGetBulkRequest(req)
+	default:
+		return va.handleGetRequest(req)
 	}
 }
 
 // handleGetRequest processes GET requests
-func (va *VirtualAgent) handleGetRequest() []byte {
+func (va *VirtualAgent) handleGetRequest(req *gosnmp.SnmpPacket) []byte {
 	va.mu.RLock()
 	defer va.mu.RUnlock()
 
-	// Create a simple response packet
+	vars := make([]gosnmp.SnmpPDU, 0, len(req.Variables))
+	for _, v := range req.Variables {
+		value := va.getOIDValue(v.Name)
+		vars = append(vars, gosnmp.SnmpPDU{
+			Name:  v.Name,
+			Type:  value.Type,
+			Value: value.Value,
+		})
+	}
+
 	outPacket := &gosnmp.SnmpPacket{
-		Version:   gosnmp.Version2c,
-		Community: "public",
+		Version:   req.Version,
+		Community: req.Community,
 		PDUType:   gosnmp.GetResponse,
-		RequestID: 1,
-		Variables: []gosnmp.SnmpPDU{
-			{
-				Name:  "1.3.6.1.2.1.1.5.0",
-				Type:  gosnmp.OctetString,
-				Value: va.sysName,
-			},
-		},
+		RequestID: req.RequestID,
+		Variables: vars,
 	}
 
 	// Marshal response
@@ -120,41 +122,28 @@ func (va *VirtualAgent) handleGetRequest() []byte {
 }
 
 // handleGetNextRequest processes GETNEXT requests (walk operation)
-func (va *VirtualAgent) handleGetNextRequest() []byte {
+func (va *VirtualAgent) handleGetNextRequest(req *gosnmp.SnmpPacket) []byte {
 	va.mu.RLock()
 	defer va.mu.RUnlock()
 
-	// For now, return first system OID
-	// In real implementation, would parse request OID from PDU
-	outPacket := &gosnmp.SnmpPacket{
-		Version:   gosnmp.Version2c,
-		Community: "public",
-		PDUType:   gosnmp.GetResponse,
-		RequestID: 1,
-		Variables: []gosnmp.SnmpPDU{},
-	}
-
-	// Use index manager if available for efficient traversal
-	if va.indexManager != nil {
-		nextOID, value := va.indexManager.GetNext("1.3.6.1.2.1.1.0", va.oidDB)
-		if nextOID != "" && value != nil {
-			nameInfo := gosnmp.SnmpPDU{
-				Name:  nextOID,
-				Type:  value.Type,
-				Value: value.Value,
-			}
-			outPacket.Variables = append(outPacket.Variables, nameInfo)
-		}
-	} else {
-		// Fallback: use database GetNext
-		nextOID, val := va.getNextOID("1.3.6.1.2.1.1.0")
+	vars := make([]gosnmp.SnmpPDU, 0, len(req.Variables))
+	for _, v := range req.Variables {
+		nextOID, val := va.getNextOID(v.Name)
 		if val != nil {
-			outPacket.Variables = append(outPacket.Variables, gosnmp.SnmpPDU{
+			vars = append(vars, gosnmp.SnmpPDU{
 				Name:  nextOID,
 				Type:  val.Type,
 				Value: val.Value,
 			})
 		}
+	}
+
+	outPacket := &gosnmp.SnmpPacket{
+		Version:   req.Version,
+		Community: req.Community,
+		PDUType:   gosnmp.GetResponse,
+		RequestID: req.RequestID,
+		Variables: vars,
 	}
 
 	data, err := outPacket.MarshalMsg()
@@ -168,46 +157,54 @@ func (va *VirtualAgent) handleGetNextRequest() []byte {
 
 // handleGetBulkRequest processes GETBULK requests (efficient walk)
 // Zabbix default: NonRepeaters=0, MaxRepeaters=10
-func (va *VirtualAgent) handleGetBulkRequest() []byte {
+func (va *VirtualAgent) handleGetBulkRequest(req *gosnmp.SnmpPacket) []byte {
 	va.mu.RLock()
 	defer va.mu.RUnlock()
 
-	outPacket := &gosnmp.SnmpPacket{
-		Version:   gosnmp.Version2c,
-		Community: "public",
-		PDUType:   gosnmp.GetResponse,
-		RequestID: 1,
-		Variables: []gosnmp.SnmpPDU{},
+	vars := make([]gosnmp.SnmpPDU, 0, len(req.Variables)*int(req.MaxRepetitions))
+	nonRepeaters := int(req.NonRepeaters)
+	if nonRepeaters < 0 {
+		nonRepeaters = 0
+	}
+	maxRepeaters := int(req.MaxRepetitions)
+	if maxRepeaters <= 0 {
+		maxRepeaters = 10
 	}
 
-	// Use index manager if available (optimized for Zabbix)
-	// Zabbix typically uses MaxRepeaters=10 (default)
-	if va.indexManager != nil {
-		results := va.indexManager.GetNextBulk("1.3.6.1.2.1.1.0", 10, va.oidDB)
-		for _, result := range results {
-			if result.Value != nil {
-				outPacket.Variables = append(outPacket.Variables, gosnmp.SnmpPDU{
-					Name:  result.OID,
-					Type:  result.Value.Type,
-					Value: result.Value.Value,
+	for i, v := range req.Variables {
+		if i < nonRepeaters {
+			nextOID, val := va.getNextOID(v.Name)
+			if val != nil {
+				vars = append(vars, gosnmp.SnmpPDU{
+					Name:  nextOID,
+					Type:  val.Type,
+					Value: val.Value,
 				})
 			}
+			continue
 		}
-	} else {
-		// Fallback: basic bulk using regular GetNext
-		currentOID := "1.3.6.1.2.1.1.0"
-		for i := 0; i < 10; i++ {
+
+		currentOID := v.Name
+		for r := 0; r < maxRepeaters; r++ {
 			nextOID, val := va.getNextOID(currentOID)
 			if val == nil || val.Type == gosnmp.EndOfMibView {
 				break
 			}
-			outPacket.Variables = append(outPacket.Variables, gosnmp.SnmpPDU{
+			vars = append(vars, gosnmp.SnmpPDU{
 				Name:  nextOID,
 				Type:  val.Type,
 				Value: val.Value,
 			})
 			currentOID = nextOID
 		}
+	}
+
+	outPacket := &gosnmp.SnmpPacket{
+		Version:   req.Version,
+		Community: req.Community,
+		PDUType:   gosnmp.GetResponse,
+		RequestID: req.RequestID,
+		Variables: vars,
 	}
 
 	data, err := outPacket.MarshalMsg()
@@ -220,12 +217,12 @@ func (va *VirtualAgent) handleGetBulkRequest() []byte {
 }
 
 // handleSetRequest returns read-only error response
-func (va *VirtualAgent) handleSetRequest() []byte {
+func (va *VirtualAgent) handleSetRequest(req *gosnmp.SnmpPacket) []byte {
 	outPacket := &gosnmp.SnmpPacket{
-		Version:    gosnmp.Version2c,
-		Community:  "public",
+		Version:    req.Version,
+		Community:  req.Community,
 		PDUType:    gosnmp.GetResponse,
-		RequestID:  1,
+		RequestID:  req.RequestID,
 		Error:      4, // readOnly error (SNMPv2)
 		ErrorIndex: 1,
 		Variables:  []gosnmp.SnmpPDU{},
@@ -243,6 +240,7 @@ func (va *VirtualAgent) handleSetRequest() []byte {
 // getOIDValue retrieves the value for a specific OID
 // Priority: device mapping (port/device-specific) > device overlay > system OIDs > OID database
 func (va *VirtualAgent) getOIDValue(oid string) *store.OIDValue {
+	oid = normalizeOID(oid)
 	// Check device mapping first (highest priority)
 	if va.deviceMapping != nil {
 		if val := va.deviceMapping.GetOID(oid, va.port, va.sysName); val != nil {
@@ -279,6 +277,7 @@ func (va *VirtualAgent) getOIDValue(oid string) *store.OIDValue {
 // getNextOID retrieves the next OID after the given one
 // Uses index manager if available for table-aware traversal (Zabbix LLD)
 func (va *VirtualAgent) getNextOID(oid string) (string, *store.OIDValue) {
+	oid = normalizeOID(oid)
 	// Try index manager first (optimized for table traversal)
 	if va.indexManager != nil {
 		return va.indexManager.GetNext(oid, va.oidDB)
@@ -295,6 +294,13 @@ func (va *VirtualAgent) getNextOID(oid string) (string, *store.OIDValue) {
 
 	value := va.getOIDValue(nextOID)
 	return nextOID, value
+}
+
+func normalizeOID(oid string) string {
+	if len(oid) > 0 && oid[0] == '.' {
+		return oid[1:]
+	}
+	return oid
 }
 
 // getSystemOID returns system-specific OID values
