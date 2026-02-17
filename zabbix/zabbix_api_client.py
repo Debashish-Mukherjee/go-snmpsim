@@ -62,13 +62,13 @@ class ZabbixAPIClient:
             "id": self.request_id
         }
         
-        # Add auth token if available (for non-login calls)
-        if self.auth_token and method != "user.login":
-            payload["auth"] = self.auth_token
-        
         headers = {
             "Content-Type": "application/json"
         }
+        
+        # For Zabbix 7.0+, use Authorization header instead of auth token in payload
+        if self.auth_token and method != "user.login":
+            headers["Authorization"] = f"Bearer {self.auth_token}"
         
         api_url = urljoin(self.url, "/api_jsonrpc.php")
         
@@ -171,7 +171,7 @@ class ZabbixAPIClient:
         port: int = 161,
         snmp_version: str = "2",
         community: str = "public",
-        group_id: str = "2"
+        group_id: str = "5"  # Changed default to "Discovered hosts"
     ) -> str:
         """
         Create a new host for SNMP monitoring
@@ -182,7 +182,7 @@ class ZabbixAPIClient:
             port: SNMP port (default: 161)
             snmp_version: SNMP version ("1" or "2" or "3")
             community: SNMP community (for SNMPv1/v2)
-            group_id: Host group ID (default: 2 = "Discovered hosts")
+            group_id: Host group ID (default: 5 = "Discovered hosts")
             
         Returns:
             Host ID
@@ -190,20 +190,21 @@ class ZabbixAPIClient:
         Raises:
             ZabbixAPIError: If host creation fails
         """
-        # Create SNMP interface
+        # Convert version to integer for Zabbix 7.x
+        version_int = int(snmp_version)
+        
+        # Create SNMP interface (Zabbix 7.x format)
         interfaces = [
             {
                 "type": 2,  # SNMP interface
                 "main": 1,
+                "useip": 1,  # Required in Zabbix 7.x
                 "ip": ip_address,
                 "dns": "",
                 "port": str(port),
                 "details": {
-                    "version": snmp_version,
-                    "community": community,
-                    "max_repetitions": 10,
-                    "timeout": 5,
-                    "retries": 3
+                    "version": version_int,  # Integer, not string
+                    "community": "{$SNMP_COMMUNITY}" if community == "public" else community
                 }
             }
         ]
@@ -211,7 +212,6 @@ class ZabbixAPIClient:
         # Host object
         host_data = {
             "host": hostname,
-            "name": hostname,
             "interfaces": interfaces,
             "groups": [{"groupid": group_id}],
             "status": 0  # 0 = enabled, 1 = disabled

@@ -1,0 +1,19 @@
+# Zabbix Configuration
+zabbix_url: "http://localhost:8081"
+zabbix_username: "Admin"
+zabbix_password: "zabbix"
+
+# SNMP Simulator Settings
+snmp_port_start: 20000
+snmp_community: "public"
+snmp_version: "2"
+
+# Device Polling Settings
+polling_interval: "1m"
+template_name: "Template Net Cisco IOS XR SNMPv2"
+hostgroup_name: "SNMP Simulated Devices"
+
+# Performance Settings
+batch_size: 10
+max_retries: 3
+retry_delay: 2

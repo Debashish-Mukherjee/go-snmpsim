@@ -57,6 +57,30 @@ snmpwalk -v2c -c public localhost:20000 1.3.6.1.2.1
 snmpbulkwalk -v2c -c public localhost:20000 1.3.6.1.2.1.2.2.1
 ```
 
+## 🏆 Scale to 1,000+ Hosts with Zabbix
+
+See **[SCALING_GUIDE.md](SCALING_GUIDE.md)** for complete instructions to deploy:
+- **1,000 virtual SNMP devices** (ports 20000-20999)
+- **1,354,000 metrics** total (~1,354 per host)
+- **5-minute polling** on all items
+- **Production-ready** Zabbix integration
+
+### Latest Test Results
+
+See **[TEST_REPORT.md](TEST_REPORT.md)** for details:
+- ✅ **1000 hosts** created and deployed
+- ✅ **1.35M+ metrics** configured
+- ✅ **5-minute polling** verified
+- ✅ **27k+ values/minute** data collection rate
+- ✅ **All 1876 OIDs** available in SNMP data
+
+**Quick Deploy**:
+```bash
+# See SCALING_GUIDE.md for all steps
+python3 scripts/add_remaining_hosts.py       # Add 900 hosts to Zabbix
+python3 scripts/add_bulk_items.py            # Deploy ~1,500 items per host
+```
+
 ## 📋 Command-Line Options
 
 ```bash

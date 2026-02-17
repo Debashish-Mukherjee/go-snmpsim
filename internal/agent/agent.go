@@ -90,12 +90,15 @@ func (va *VirtualAgent) HandlePacket(packet []byte) []byte {
 
 // handleGetRequest processes GET requests
 func (va *VirtualAgent) handleGetRequest(req *gosnmp.SnmpPacket) []byte {
-	va.mu.RLock()
-	defer va.mu.RUnlock()
-
+	// Pre-allocate response variables
 	vars := make([]gosnmp.SnmpPDU, 0, len(req.Variables))
+	
+	// Process each variable with minimal lock time
 	for _, v := range req.Variables {
+		va.mu.RLock()
 		value := va.getOIDValue(v.Name)
+		va.mu.RUnlock()
+		
 		vars = append(vars, gosnmp.SnmpPDU{
 			Name:  v.Name,
 			Type:  value.Type,
@@ -103,6 +106,7 @@ func (va *VirtualAgent) handleGetRequest(req *gosnmp.SnmpPacket) []byte {
 		})
 	}
 
+	// Marshal response without holding lock
 	outPacket := &gosnmp.SnmpPacket{
 		Version:   req.Version,
 		Community: req.Community,
@@ -123,12 +127,15 @@ func (va *VirtualAgent) handleGetRequest(req *gosnmp.SnmpPacket) []byte {
 
 // handleGetNextRequest processes GETNEXT requests (walk operation)
 func (va *VirtualAgent) handleGetNextRequest(req *gosnmp.SnmpPacket) []byte {
-	va.mu.RLock()
-	defer va.mu.RUnlock()
-
+	// Pre-allocate response variables
 	vars := make([]gosnmp.SnmpPDU, 0, len(req.Variables))
+	
+	// Process each variable with minimal lock time
 	for _, v := range req.Variables {
+		va.mu.RLock()
 		nextOID, val := va.getNextOID(v.Name)
+		va.mu.RUnlock()
+		
 		if val != nil {
 			vars = append(vars, gosnmp.SnmpPDU{
 				Name:  nextOID,
@@ -138,6 +145,7 @@ func (va *VirtualAgent) handleGetNextRequest(req *gosnmp.SnmpPacket) []byte {
 		}
 	}
 
+	// Marshal response without holding lock
 	outPacket := &gosnmp.SnmpPacket{
 		Version:   req.Version,
 		Community: req.Community,
@@ -158,10 +166,7 @@ func (va *VirtualAgent) handleGetNextRequest(req *gosnmp.SnmpPacket) []byte {
 // handleGetBulkRequest processes GETBULK requests (efficient walk)
 // Zabbix default: NonRepeaters=0, MaxRepeaters=10
 func (va *VirtualAgent) handleGetBulkRequest(req *gosnmp.SnmpPacket) []byte {
-	va.mu.RLock()
-	defer va.mu.RUnlock()
-
-	vars := make([]gosnmp.SnmpPDU, 0, len(req.Variables)*int(req.MaxRepetitions))
+	// Pre-allocate response variables
 	nonRepeaters := int(req.NonRepeaters)
 	if nonRepeaters < 0 {
 		nonRepeaters = 0
@@ -171,9 +176,15 @@ func (va *VirtualAgent) handleGetBulkRequest(req *gosnmp.SnmpPacket) []byte {
 		maxRepeaters = 10
 	}
 
+	vars := make([]gosnmp.SnmpPDU, 0, len(req.Variables)*maxRepeaters)
+
+	// Process each variable with minimal lock time
 	for i, v := range req.Variables {
 		if i < nonRepeaters {
+			va.mu.RLock()
 			nextOID, val := va.getNextOID(v.Name)
+			va.mu.RUnlock()
+			
 			if val != nil {
 				vars = append(vars, gosnmp.SnmpPDU{
 					Name:  nextOID,
@@ -184,9 +195,13 @@ func (va *VirtualAgent) handleGetBulkRequest(req *gosnmp.SnmpPacket) []byte {
 			continue
 		}
 
+		// For repeaters, get multiple consecutive OIDs
 		currentOID := v.Name
 		for r := 0; r < maxRepeaters; r++ {
+			va.mu.RLock()
 			nextOID, val := va.getNextOID(currentOID)
+			va.mu.RUnlock()
+			
 			if val == nil || val.Type == gosnmp.EndOfMibView {
 				break
 			}

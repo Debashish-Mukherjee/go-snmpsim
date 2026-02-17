@@ -171,8 +171,6 @@ func (s *Simulator) handleListener(ctx context.Context, conn *net.UDPConn, port 
 	defer s.wg.Done()
 
 	agent := s.agents[port]
-	buffer := s.packetPool.Get().([]byte)
-	defer s.packetPool.Put(buffer)
 
 	for {
 		select {
@@ -182,11 +180,15 @@ func (s *Simulator) handleListener(ctx context.Context, conn *net.UDPConn, port 
 		default:
 		}
 
+		// Get buffer from pool for this packet
+		buffer := s.packetPool.Get().([]byte)
+
 		// Set read deadline to allow graceful shutdown
 		conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 
 		n, remoteAddr, err := conn.ReadFromUDP(buffer)
 		if err != nil {
+			s.packetPool.Put(buffer) // Return buffer on error
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				continue
 			}
@@ -198,6 +200,8 @@ func (s *Simulator) handleListener(ctx context.Context, conn *net.UDPConn, port 
 
 		// Dispatch packet to agent
 		response := agent.HandlePacket(buffer[:n])
+		s.packetPool.Put(buffer) // Return buffer after processing
+
 		if response != nil {
 			_, err := conn.WriteToUDP(response, remoteAddr)
 			if err != nil {
