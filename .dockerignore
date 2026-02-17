@@ -1,0 +1,17 @@
+.git
+.gitignore
+.github
+.DS_Store
+*.md
+!web/
+old/
+examples/
+docs/
+scripts/
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.env
+.env.local

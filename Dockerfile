@@ -15,35 +15,42 @@ RUN go mod download
 COPY . .
 
 # Build the binary
-RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o snmpsim .
+RUN CGO_ENABLED=0 GOOS=linux go build -o snmpsim ./cmd/snmpsim
 
 # Final stage
 FROM alpine:latest
 
-# Install runtime dependencies
-RUN apk --no-cache add ca-certificates tcpdump netcat-openbsd
+# Install runtime dependencies including net-snmp tools for SNMP testing
+RUN apk --no-cache add \
+    ca-certificates \
+    tcpdump \
+    netcat-openbsd \
+    net-snmp-tools \
+    curl
 
 WORKDIR /app
 
 # Copy binary from builder
 COPY --from=builder /build/snmpsim .
 
-# Create default data directory
-RUN mkdir -p /app/data
+# Copy web UI assets
+COPY --from=builder /build/web ./web
 
-# Expose port range needed for SNMP (example: 20000-30000)
-# Note: Docker doesn't support port ranges in EXPOSE, so we document it
-# Users should run with: docker run -p 20000-30000:20000-30000/udp
+# Create default data directories
+RUN mkdir -p /app/data /app/config/workloads
+
+# Expose port range for SNMP (20000-30000) and Web UI (8080)
+# Docker doesn't support port ranges in EXPOSE, so we document the range
+# Users should run with: docker run -p 20000-30000:20000-30000/udp -p 8080:8080
+EXPOSE 8080
 
 # Set environment for file descriptors
 ENV GOMAXPROCS=8
 
-# Health check
+# Health check using HTTP endpoint
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD nc -zv localhost 20000 || exit 1
+    CMD curl -f http://localhost:8080/api/status || exit 1
 
-# Default command
+# Default command with Web UI enabled
 ENTRYPOINT ["/app/snmpsim"]
-
-# Default arguments
-CMD ["-port-start=20000", "-port-end=30000", "-devices=1000", "-listen=0.0.0.0"]
+CMD ["-port-start=20000", "-port-end=30000", "-devices=100", "-web-port=8080", "-listen=0.0.0.0"]
