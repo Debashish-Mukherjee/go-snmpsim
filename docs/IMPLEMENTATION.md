@@ -184,7 +184,7 @@ P99.9: ~2.0ms
 
 ### Option 1: Local Binary
 ```bash
-./go-snmpsim -port-start=20000 -port-end=30000 -devices=1000
+./snmpsim -port-start=20000 -port-end=30000 -devices=1000
 ```
 
 ### Option 2: Docker Container

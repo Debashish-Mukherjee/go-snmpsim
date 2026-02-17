@@ -412,14 +412,15 @@ snmpbulkwalk -v2c -c public 127.0.0.1:20000 -Cr10 1.3.6.1.2.1.2.2.1.2
 
 ## Files Summary
 
+**Current Location (After Refactoring):**
 ```
 go-snmpsim/
-├── oid_table.go                         ✅ NEW (Phase 4, 420 lines)
-├── oid_index_manager.go                 ✅ NEW (Phase 4, 450 lines)
-├── agent.go                             ✅ MODIFIED (indexManager support)
-├── simulator.go                         ✅ MODIFIED (index build + assignment)
-├── PHASE_4_COMPLETION.md                ✅ NEW
-├── testdata/
+├── internal/store/table.go              ✅ (Phase 4, 420 lines)
+├── internal/store/index_manager.go      ✅ (Phase 4, 450 lines)
+├── internal/agent/agent.go              ✅ MODIFIED (indexManager support)
+├── internal/engine/simulator.go         ✅ MODIFIED (index build + assignment)
+├── docs/PHASE_4_COMPLETION.md           ✅ NEW
+├── examples/testdata/
 │   ├── zabbix-lld-tables.snmprec        ✅ NEW (4-port device)
 │   ├── zabbix-48port-switch.snmprec     ✅ NEW (48-port switch)
 │   ├── device-mapping.snmprec           (Phase 3)

@@ -13,19 +13,20 @@
 ### 1. Build Simulator
 ```bash
 cd /home/debashish/trials/go-snmpsim
-go build -o go-snmpsim .
+make build
+# Or: go build -o snmpsim ./cmd/snmpsim
 ```
 
 ### 2. Run with Zabbix Test Data
 ```bash
 # 48-port switch simulation (1,056 OIDs)
-./go-snmpsim -snmprec=testdata/zabbix-48port-switch.snmprec \
+./snmpsim -snmprec=examples/testdata/zabbix-48port-switch.snmprec \
              -port-start=20000 \
              -port-end=20001 \
              -devices=1
 
 # 4-interface device (110 OIDs)
-./go-snmpsim -snmprec=testdata/zabbix-lld-tables.snmprec \
+./snmpsim -snmprec=examples/testdata/zabbix-lld-tables.snmprec \
              -port-start=20000 \
              -port-end=20001 \
              -devices=1

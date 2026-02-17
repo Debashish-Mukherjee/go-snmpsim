@@ -236,10 +236,10 @@ go build .
 ### Manual Test (1,000 ports)
 ```bash
 # Terminal 1: Start simulator
-./go-snmpsim -port-start=20000 -port-end=20999 -devices=1000
+./snmpsim -port-start=20000 -port-end=20999 -devices=1000
 
 # Terminal 2: Verify listeners
-netstat -ulnp | grep go-snmpsim | wc -l  # Should show 1000
+netstat -ulnp | grep snmpsim | wc -l  # Should show 1000
 
 # Terminal 1: Press Ctrl+C
 # Observe logs: "Closing listener on port X" for each port

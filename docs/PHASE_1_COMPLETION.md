@@ -101,8 +101,9 @@ Note:   Large integer warnings about counter64 (config issue, not parser)
 
 ### Test 4: Binary Build
 ```
-Command: go build -o go-snmpsim .
-Result:  ✅ Success (3.4 MB binary)
+Command: make build
+         # Or: go build -o snmpsim ./cmd/snmpsim
+Result:  ✅ Success (3.6 MB binary)
 Errors:  None
 ```
 
@@ -115,13 +116,13 @@ The `-snmprec` flag now accepts **any** of the three formats:
 
 ```bash
 # Named format (MIB names)
-./go-snmpsim -snmprec=router-named.txt -port-start=20000 -devices=10
+./snmpsim -snmprec=examples/testdata/router-named.txt -port-start=20000 -devices=10
 
 # Numeric format (OID dots)
-./go-snmpsim -snmprec=switch-numeric.txt -port-start=20000 -devices=10
+./snmpsim -snmprec=examples/testdata/switch-numeric.txt -port-start=20000 -devices=10
 
 # Native .snmprec format
-./go-snmpsim -snmprec=device-snmprec.txt -port-start=20000 -devices=10
+./snmpsim -snmprec=examples/testdata/device-snmprec.txt -port-start=20000 -devices=10
 ```
 
 **No conversion tool needed** - simulator handles parsing transparently.
@@ -171,9 +172,10 @@ Ready to implement **Template Support** (#1-48 syntax):
 
 ## Files Summary
 
+**Current Location (After Refactoring):**
 ```
 go-snmpsim/
-├── snmpwalk_parser.go          ✅ NEW (Phase 1)
+├── internal/store/parser.go             ✅ (Phase 1, 700+ lines)
 │   ├── ParseSnmpwalkOutput()
 │   ├── parseNamedFormat()
 │   ├── parseNumericFormat()
@@ -182,7 +184,8 @@ go-snmpsim/
 │   ├── lookupMIBOID() - 50+ mappings
 │   └── [15 helper functions]
 │
-├── snmprec_loader.go           ✅ MODIFIED
+├── internal/store/loader.go             ✅ MODIFIED
+│   └── LoadSNMPrecFile() - with format auto-detection
 │   └── LoadSNMPrecFile() - Now calls ParseSnmpwalkOutput()
 │
 └── testdata/

@@ -335,18 +335,19 @@ Demonstrates priority:
 
 ## Files Summary
 
+**Current Location (After Refactoring):**
 ```
 go-snmpsim/
-├── oid_device_mapping.go               ✅ NEW (Phase 3, 380+ lines)
-├── snmprec_loader.go                   ✅ MODIFIED (added LoadDeviceMappings)
-├── agent.go                            ✅ MODIFIED (SetDeviceMapping, priority)
-├── PHASE_3_COMPLETION.md               ✅ NEW
-├── testdata/
-│   ├── device-mapping.snmprec          ✅ NEW (53 lines, testing)
-│   ├── device-mapping-advanced.snmprec ✅ NEW (102 lines, advanced)
-│   ├── template-interfaces.snmprec     (Phase 2)
-│   ├── router-named.txt                (Phase 1)
-│   ├── switch-numeric.txt              (Phase 1)
+├── internal/store/device_mapping.go     ✅ (Phase 3, 380+ lines)
+├── internal/store/loader.go             ✅ MODIFIED (added LoadDeviceMappings)
+├── internal/agent/agent.go              ✅ MODIFIED (SetDeviceMapping, priority)
+├── docs/PHASE_3_COMPLETION.md           ✅ NEW
+├── examples/testdata/
+│   ├── device-mapping.snmprec           ✅ NEW (53 lines, testing)
+│   ├── device-mapping-advanced.snmprec  ✅ NEW (102 lines, advanced)
+│   ├── template-interfaces.snmprec      (Phase 2)
+│   ├── router-named.txt                 (Phase 1)
+│   ├── switch-numeric.txt               (Phase 1)
 │   └── device-snmprec.txt              (Phase 1)
 └── go-snmpsim                          ✅ REBUILT (all phases integrated)
 ```
