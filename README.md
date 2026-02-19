@@ -197,6 +197,45 @@ Run with variations:
       -variation-file variations.yaml
 ```
 
+### Record Live Devices to .snmprec
+
+Record from SNMPv2c target (uses default walk roots):
+
+```bash
+go run ./cmd/gosnmpsim-record \
+      --target 192.0.2.10 --port 161 --community public \
+      --out device.snmprec
+```
+
+Record from SNMPv3 target with exclusions, limits, and rate control:
+
+```bash
+go run ./cmd/gosnmpsim-record \
+      --target 192.0.2.10 --port 161 \
+      --v3-user simuser --v3-auth SHA256 --v3-auth-key authpass \
+      --v3-priv AES128 --v3-priv-key privpass \
+      --exclude 1.3.6.1.2.1.1.3 --exclude 1.3.6.1.2.1.31.1.1.1.15 \
+      --max-oids 5000 --rate-limit 200 \
+      --out device-v3.snmprec
+```
+
+Default walk roots are:
+
+```text
+1.3.6.1.2.1.1
+1.3.6.1.2.1.2.2
+1.3.6.1.2.1.31.1.1
+1.3.6.1.2.1.25
+1.3.6.1.2.1.99
+1.3.6.1.4.1
+```
+
+### Compare Two Walks
+
+```bash
+go run ./cmd/gosnmpsim-diff --left before.snmprec --right after.snmprec
+```
+
 ### 2000-Device Stress Suite (Cisco IOS-style)
 
 Stress suite validates startup/listeners and concurrent SNMP GET/BULK operations across 2000 devices.
