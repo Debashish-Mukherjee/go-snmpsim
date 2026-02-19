@@ -118,13 +118,24 @@ func (odb *OIDDatabase) GetAll() map[string]*OIDValue {
 	return result
 }
 
-// SortOIDs sorts all OIDs for efficient traversal
+// SortOIDs sorts all OIDs for efficient traversal and removes duplicates
 func (odb *OIDDatabase) SortOIDs() {
 	odb.mu.Lock()
 	defer odb.mu.Unlock()
 
 	// Quick sort of OIDs
 	quickSortOIDs(odb.sortedOIDs, 0, len(odb.sortedOIDs)-1)
+
+	// Deduplicate in-place (after sort, duplicates are adjacent)
+	if len(odb.sortedOIDs) > 1 {
+		out := odb.sortedOIDs[:1]
+		for _, oid := range odb.sortedOIDs[1:] {
+			if oid != out[len(out)-1] {
+				out = append(out, oid)
+			}
+		}
+		odb.sortedOIDs = out
+	}
 }
 
 // isOIDLess compares two OIDs lexicographically
@@ -227,7 +238,7 @@ func loadDefaultOIDs(db *OIDDatabase) {
 		"1.3.6.1.2.1.1.2.0":     {Type: gosnmp.ObjectIdentifier, Value: "1.3.6.1.4.1.9.9.46.1"},
 		"1.3.6.1.2.1.1.4.0":     {Type: gosnmp.OctetString, Value: "admin@example.com"},
 		"1.3.6.1.2.1.1.7.0":     {Type: gosnmp.Integer, Value: 72},
-		"1.3.6.1.2.1.1.8.0":     {Type: gosnmp.TimeTicks, Value: 0},
+		"1.3.6.1.2.1.1.8.0":     {Type: gosnmp.TimeTicks, Value: uint32(0)},
 		"1.3.6.1.2.1.1.9.1.2.1": {Type: gosnmp.ObjectIdentifier, Value: "1.3.6.1.6.3.1.1.4.1.0"},
 
 		// Interfaces group

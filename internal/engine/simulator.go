@@ -12,6 +12,7 @@ import (
 
 	"github.com/debashish-mukherjee/go-snmpsim/internal/agent"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/store"
+	"github.com/debashish-mukherjee/go-snmpsim/internal/v3"
 	"golang.org/x/sys/unix"
 )
 
@@ -22,7 +23,8 @@ type Simulator struct {
 	portEnd     int
 	numDevices  int
 	snmprecFile string
-	v3Username  string
+	v3Config    v3.Config
+	v3State     *v3.EngineStateStore
 
 	// Listeners and dispatcher
 	listeners    map[int]*net.UDPConn        // port -> listener
@@ -40,7 +42,7 @@ type Simulator struct {
 }
 
 // NewSimulator creates a new SNMP simulator instance
-func NewSimulator(listenAddr string, portStart, portEnd, numDevices int, snmprecFile string, v3Username string) (*Simulator, error) {
+func NewSimulator(listenAddr string, portStart, portEnd, numDevices int, snmprecFile string, v3Config v3.Config) (*Simulator, error) {
 	if portStart >= portEnd {
 		return nil, fmt.Errorf("portStart must be less than portEnd")
 	}
@@ -49,8 +51,15 @@ func NewSimulator(listenAddr string, portStart, portEnd, numDevices int, snmprec
 		return nil, fmt.Errorf("numDevices must be positive")
 	}
 
-	if v3Username == "" {
-		v3Username = "simuser"
+	if v3Config.Enabled {
+		if err := v3Config.Validate(); err != nil {
+			return nil, fmt.Errorf("invalid snmpv3 configuration: %w", err)
+		}
+	}
+
+	v3State, err := v3.NewEngineStateStore("")
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize v3 state: %w", err)
 	}
 
 	sim := &Simulator{
@@ -59,7 +68,8 @@ func NewSimulator(listenAddr string, portStart, portEnd, numDevices int, snmprec
 		portEnd:     portEnd,
 		numDevices:  numDevices,
 		snmprecFile: snmprecFile,
-		v3Username:  v3Username,
+		v3Config:    v3Config,
+		v3State:     v3State,
 		listeners:   make(map[int]*net.UDPConn),
 		agents:      make(map[int]*agent.VirtualAgent),
 		packetPool: &sync.Pool{
@@ -105,12 +115,26 @@ func (s *Simulator) createVirtualAgents(oidDB *store.OIDDatabase) error {
 
 	deviceID := 0
 	for port := s.portStart; port < s.portEnd && deviceID < s.numDevices; port++ {
+		cfg := s.v3Config
+		boots := uint32(1)
+		if cfg.Enabled {
+			if cfg.EngineID == "" {
+				cfg.EngineID = v3.GenerateEngineID(fmt.Sprintf("device-%d-port-%d", deviceID, port))
+			}
+			persistedBoots, err := s.v3State.EnsureBoots(cfg.EngineID)
+			if err != nil {
+				return fmt.Errorf("failed to persist v3 engine boots: %w", err)
+			}
+			boots = persistedBoots
+		}
+
 		agent := agent.NewVirtualAgent(
 			deviceID,
 			port,
 			fmt.Sprintf("Device-%d", deviceID),
 			oidDB,
-			s.v3Username,
+			cfg,
+			boots,
 		)
 
 		// Assign index manager for Zabbix LLD support
@@ -139,7 +163,6 @@ func (s *Simulator) Start(ctx context.Context) error {
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	// Create UDP listeners with SO_REUSEADDR/SO_REUSEPORT
 	for port := range s.agents {
@@ -151,6 +174,7 @@ func (s *Simulator) Start(ctx context.Context) error {
 		// Create listener
 		conn, err := net.ListenUDP("udp", &addr)
 		if err != nil {
+			s.mu.Unlock()
 			s.cleanup()
 			return fmt.Errorf("failed to listen on port %d: %w", port, err)
 		}
@@ -158,6 +182,7 @@ func (s *Simulator) Start(ctx context.Context) error {
 		// Set socket options for better performance
 		if err := setSocketOptions(conn); err != nil {
 			conn.Close()
+			s.mu.Unlock()
 			s.cleanup()
 			return fmt.Errorf("failed to set socket options on port %d: %w", port, err)
 		}
@@ -168,6 +193,8 @@ func (s *Simulator) Start(ctx context.Context) error {
 		s.wg.Add(1)
 		go s.handleListener(ctx, conn, port)
 	}
+
+	s.mu.Unlock()
 
 	log.Printf("Started %d UDP listeners", len(s.listeners))
 	return nil
@@ -235,6 +262,9 @@ func (s *Simulator) cleanup() {
 	defer s.mu.Unlock()
 
 	for port, conn := range s.listeners {
+		// Set a past deadline to unblock any pending ReadFromUDP calls
+		// before closing the connection.
+		conn.SetDeadline(time.Now())
 		if err := conn.Close(); err != nil {
 			log.Printf("Error closing listener on port %d: %v", port, err)
 		}
@@ -258,32 +288,38 @@ func (s *Simulator) Statistics() map[string]interface{} {
 
 // setSocketOptions configures UDP socket for optimal performance
 func setSocketOptions(conn *net.UDPConn) error {
-	// Get the raw socket file descriptor
-	file, err := conn.File()
+	// Use SyscallConn to access the raw socket FD without affecting the
+	// non-blocking state of the connection (conn.File() would set blocking mode
+	// which breaks deadline-based shutdown).
+	rawConn, err := conn.SyscallConn()
 	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	fd := int(file.Fd())
-
-	// Set SO_RCVBUF to prevent packet loss during burst traffic
-	// 256KB buffer should be sufficient for most scenarios
-	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUF, 256*1024); err != nil {
-		return fmt.Errorf("failed to set SO_RCVBUF: %w", err)
+		return fmt.Errorf("failed to get raw conn: %w", err)
 	}
 
-	// Set SO_SNDBUF for transmission
-	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_SNDBUF, 256*1024); err != nil {
-		return fmt.Errorf("failed to set SO_SNDBUF: %w", err)
-	}
+	var setsockoptErr error
+	err = rawConn.Control(func(fd uintptr) {
+		ifd := int(fd)
 
-	// Try to enable SO_REUSEPORT if available (Linux 3.9+)
-	// This allows multiple processes to bind to the same port
-	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, int(unix.SO_REUSEPORT), 1); err != nil {
-		// This is not critical, just warn
-		log.Printf("Warning: SO_REUSEPORT not available (may reduce performance): %v", err)
-	}
+		// Set SO_RCVBUF to prevent packet loss during burst traffic
+		// 256KB buffer should be sufficient for most scenarios
+		if err := syscall.SetsockoptInt(ifd, syscall.SOL_SOCKET, syscall.SO_RCVBUF, 256*1024); err != nil {
+			setsockoptErr = fmt.Errorf("failed to set SO_RCVBUF: %w", err)
+			return
+		}
 
-	return nil
+		// Set SO_SNDBUF for transmission
+		if err := syscall.SetsockoptInt(ifd, syscall.SOL_SOCKET, syscall.SO_SNDBUF, 256*1024); err != nil {
+			setsockoptErr = fmt.Errorf("failed to set SO_SNDBUF: %w", err)
+			return
+		}
+
+		// Try to enable SO_REUSEPORT if available (Linux 3.9+)
+		if err := syscall.SetsockoptInt(ifd, syscall.SOL_SOCKET, int(unix.SO_REUSEPORT), 1); err != nil {
+			log.Printf("Warning: SO_REUSEPORT not available (may reduce performance): %v", err)
+		}
+	})
+	if err != nil {
+		return fmt.Errorf("rawConn.Control failed: %w", err)
+	}
+	return setsockoptErr
 }

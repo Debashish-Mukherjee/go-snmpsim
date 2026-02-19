@@ -1,14 +1,18 @@
 package agent
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/debashish-mukherjee/go-snmpsim/internal/store"
+	"github.com/debashish-mukherjee/go-snmpsim/internal/v3"
 	"github.com/gosnmp/gosnmp"
 )
 
@@ -17,8 +21,8 @@ type VirtualAgent struct {
 	deviceID      int
 	port          int
 	sysName       string
-	v3Username    string
-	v3EngineID    string
+	v3Config      v3.Config
+	v3EngineBoots uint32
 	oidDB         *store.OIDDatabase
 	indexManager  *store.OIDIndexManager  // Index manager for Zabbix LLD (table-aware)
 	deviceMapping *store.DeviceOIDMapping // Device-specific OID overrides
@@ -32,17 +36,20 @@ type VirtualAgent struct {
 }
 
 // NewVirtualAgent creates a new virtual SNMP agent
-func NewVirtualAgent(deviceID int, port int, sysName string, oidDB *store.OIDDatabase, v3Username string) *VirtualAgent {
-	if v3Username == "" {
-		v3Username = "simuser"
+func NewVirtualAgent(deviceID int, port int, sysName string, oidDB *store.OIDDatabase, v3Config v3.Config, v3EngineBoots uint32) *VirtualAgent {
+	if v3Config.Enabled && v3Config.Username == "" {
+		v3Config.Username = "simuser"
+	}
+	if v3Config.Enabled && v3Config.EngineID == "" {
+		v3Config.EngineID = v3.GenerateEngineID(fmt.Sprintf("device-%d", deviceID))
 	}
 
 	return &VirtualAgent{
 		deviceID:      deviceID,
 		port:          port,
 		sysName:       sysName,
-		v3Username:    v3Username,
-		v3EngineID:    fmt.Sprintf("\x80\x00\x1f\x88gosnmpsim-%d", deviceID),
+		v3Config:      v3Config,
+		v3EngineBoots: v3EngineBoots,
 		oidDB:         oidDB,
 		indexManager:  nil,
 		deviceMapping: nil,
@@ -77,10 +84,14 @@ func (va *VirtualAgent) HandlePacket(packet []byte) []byte {
 			va.deviceID, va.port, count)
 	}
 
-	req, err := va.decodePacket(packet)
+	req, reportOID, err := va.decodePacket(packet)
 	if err != nil {
 		log.Printf("Device %d: Failed to parse SNMP packet: %v", va.deviceID, err)
 		return nil
+	}
+
+	if reportOID != "" {
+		return va.handleV3USMReport(req, reportOID)
 	}
 
 	if va.shouldSendV3DiscoveryReport(req) {
@@ -99,26 +110,200 @@ func (va *VirtualAgent) HandlePacket(packet []byte) []byte {
 	}
 }
 
-func (va *VirtualAgent) decodePacket(packet []byte) (*gosnmp.SnmpPacket, error) {
-	versions := []gosnmp.SnmpVersion{gosnmp.Version3, gosnmp.Version2c, gosnmp.Version1}
-	var lastErr error
-
-	for _, version := range versions {
-		decoder := gosnmp.GoSNMP{Version: version, Community: "public"}
-		if version == gosnmp.Version3 {
-			decoder.SecurityModel = gosnmp.UserSecurityModel
-			decoder.MsgFlags = gosnmp.NoAuthNoPriv
-			decoder.SecurityParameters = &gosnmp.UsmSecurityParameters{UserName: va.v3Username}
+func (va *VirtualAgent) decodePacket(packet []byte) (*gosnmp.SnmpPacket, string, error) {
+	if va.v3Config.Enabled {
+		// Use the full auth+priv decoder for ALL v3 traffic.
+		// gosnmp reads msgFlags FROM the packet bytes — if the packet is noAuthNoPriv
+		// (e.g. discovery), no HMAC verification is attempted even when auth params are
+		// present in the decoder. This lets us handle both discovery and authenticated
+		// packets in a single pass.
+		usmParams := va.v3Config.BuildUSM(va.v3EngineBoots, uint32(time.Since(va.startTime).Seconds()))
+		// Pre-initialize keys; without this, gosnmp calcPacketDigest gets a nil SecretKey.
+		if initErr := usmParams.InitSecurityKeys(); initErr != nil {
+			log.Printf("Device %d: Failed to initialize USM security keys: %v", va.deviceID, initErr)
+		}
+		secureDecoder := gosnmp.GoSNMP{
+			Version:            gosnmp.Version3,
+			SecurityModel:      gosnmp.UserSecurityModel,
+			MsgFlags:           va.v3Config.SecurityLevel(),
+			SecurityParameters: usmParams,
 		}
 
-		req, err := decoder.SnmpDecodePacket(packet)
-		if err == nil {
-			return req, nil
+		// Save a copy of raw bytes before SnmpDecodePacket modifies them.
+		// SnmpDecodePacket zeroes the auth params and decrypts the privacy section
+		// in-place. For HMAC verification, we need the original encrypted bytes
+		// with only the auth params zeroed (not decrypted).
+		rawCopy := make([]byte, len(packet))
+		copy(rawCopy, packet)
+
+		req, err := secureDecoder.SnmpDecodePacket(packet)
+		if err == nil && req.Version == gosnmp.Version3 {
+			// SnmpDecodePacket does NOT verify the incoming HMAC (it only decrypts).
+			// We must manually verify authentication when the packet requests auth.
+			if req.MsgFlags&gosnmp.AuthNoPriv != 0 {
+				if authErr := va.verifyIncomingHMAC(rawCopy, req, usmParams); authErr != nil {
+					// Auth verification failed: return WrongDigest report
+					return req, v3.USMStatsWrongDigestOID, nil
+				}
+			}
+			if reportOID := va.validateUSMWindow(req); reportOID != "" {
+				return req, reportOID, nil
+			}
+			return req, "", nil
 		}
-		lastErr = err
+
+		// Auth/digest failure: decode with noAuthNoPriv to extract packet structure
+		// for the Report PDU, then signal WrongDigest.
+		if err != nil && isAuthError(err) {
+			noAuthDecoder := gosnmp.GoSNMP{
+				Version:            gosnmp.Version3,
+				SecurityModel:      gosnmp.UserSecurityModel,
+				MsgFlags:           gosnmp.NoAuthNoPriv,
+				SecurityParameters: &gosnmp.UsmSecurityParameters{UserName: va.v3Config.Username},
+			}
+			baseReq, baseErr := noAuthDecoder.SnmpDecodePacket(packet)
+			if baseErr == nil {
+				return baseReq, v3.USMStatsWrongDigestOID, nil
+			}
+			return nil, "", err
+		}
+
+		// If secure decode failed for non-auth reasons, the packet is not v3.
+		if err != nil {
+			// fall through to v2c / v1
+		}
 	}
 
-	return nil, lastErr
+	decoderV2 := gosnmp.GoSNMP{Version: gosnmp.Version2c, Community: "public"}
+	req, err := decoderV2.SnmpDecodePacket(packet)
+	if err == nil {
+		return req, "", nil
+	}
+
+	decoderV1 := gosnmp.GoSNMP{Version: gosnmp.Version1, Community: "public"}
+	req, err = decoderV1.SnmpDecodePacket(packet)
+	if err == nil {
+		return req, "", nil
+	}
+
+	return nil, "", err
+}
+
+// marshalPacket ensures USM SecretKey is initialized from the passphrase and
+// the per-packet AES/DES salt is allocated before calling MarshalMsg.
+// gosnmp's MarshalMsg uses SecretKey directly for HMAC signing and relies on
+// InitPacket (which sets PrivacyParameters/salt) for the encryption IV.
+// Callers that build fresh UsmSecurityParameters must call both before sending.
+func marshalPacket(packet *gosnmp.SnmpPacket) ([]byte, error) {
+	if packet.Version == gosnmp.Version3 && packet.SecurityParameters != nil {
+		if usm, ok := packet.SecurityParameters.(*gosnmp.UsmSecurityParameters); ok && usm != nil {
+			if err := usm.InitSecurityKeys(); err != nil {
+				return nil, fmt.Errorf("init v3 security keys: %w", err)
+			}
+			if err := usm.InitPacket(packet); err != nil {
+				return nil, fmt.Errorf("init v3 packet salt: %w", err)
+			}
+		}
+	}
+	return packet.MarshalMsg()
+}
+
+// isAuthError returns true when the error indicates an HMAC authentication failure.
+func isAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, gosnmp.ErrWrongDigest) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "digest") || strings.Contains(msg, "authentication")
+}
+
+// verifyIncomingHMAC manually verifies the HMAC of an incoming authenticated SNMPv3 packet.
+// rawCopy is a copy of the original packet bytes (before SnmpDecodePacket modifies them).
+// The function zeros the auth digest bytes in rawCopy and computes HMAC, then compares
+// with the received digest from the decoded packet's SecurityParameters.
+func (va *VirtualAgent) verifyIncomingHMAC(rawCopy []byte, req *gosnmp.SnmpPacket, localUSM *gosnmp.UsmSecurityParameters) error {
+	usmParams, ok := req.SecurityParameters.(*gosnmp.UsmSecurityParameters)
+	if !ok || len(usmParams.AuthenticationParameters) == 0 {
+		return nil // no auth params to verify
+	}
+
+	// Translate gosnmp auth protocol to our v3 package's AuthProtocol
+	var authProto v3.AuthProtocol
+	switch localUSM.AuthenticationProtocol {
+	case gosnmp.MD5:
+		authProto = v3.AuthMD5
+	case gosnmp.SHA:
+		authProto = v3.AuthSHA1
+	case gosnmp.SHA224:
+		authProto = v3.AuthSHA224
+	case gosnmp.SHA256:
+		authProto = v3.AuthSHA256
+	case gosnmp.SHA384:
+		authProto = v3.AuthSHA384
+	case gosnmp.SHA512:
+		authProto = v3.AuthSHA512
+	default:
+		return nil // no auth protocol configured, nothing to verify
+	}
+
+	if len(localUSM.SecretKey) == 0 {
+		return nil // no localized key available, skip verification
+	}
+
+	received := []byte(usmParams.AuthenticationParameters)
+	if len(received) == 0 {
+		return nil
+	}
+
+	// Per RFC 3414: to verify HMAC, zero the auth params in the raw packet bytes
+	// (over the encrypted packet, not decrypted), then compute HMAC and compare.
+	// rawCopy contains the original bytes before SnmpDecodePacket decrypted them.
+	// We find the auth digest bytes in rawCopy using the BER OCTET STRING prefix.
+	// Auth params are encoded as: 04 NN [NN bytes] in the USM security parameters.
+	// They appear in the first 200 bytes of the packet.
+	searchLimit := len(rawCopy)
+	if searchLimit > 200 {
+		searchLimit = 200
+	}
+	authLen := byte(len(received))
+	idx := -1
+	for i := 0; i < searchLimit-int(authLen)-1; i++ {
+		if rawCopy[i] == 0x04 && rawCopy[i+1] == authLen {
+			// Check if the bytes at [i+2:i+2+authLen] match the received digest
+			if bytes.Equal(rawCopy[i+2:i+2+int(authLen)], received) {
+				idx = i + 2
+				break
+			}
+		}
+	}
+	if idx < 0 {
+		// Auth params not found in raw packet — skip verification
+		return nil
+	}
+	// Zero the auth params in the copy
+	for i := idx; i < idx+int(authLen); i++ {
+		rawCopy[i] = 0
+	}
+
+	// Compute HMAC over the modified copy (encrypted payload + zeroed auth params)
+	computed, err := v3.HMACDigest(authProto, localUSM.SecretKey, rawCopy)
+	if err != nil {
+		return fmt.Errorf("HMAC computation failed: %w", err)
+	}
+
+	// Truncate computed digest to the length of the received digest (e.g., 12 bytes for SHA1/MD5)
+	truncated := computed
+	if len(truncated) > len(received) {
+		truncated = computed[:len(received)]
+	}
+
+	if !bytes.Equal(truncated, received) {
+		return fmt.Errorf("HMAC mismatch: wrong authentication key")
+	}
+	return nil
 }
 
 func buildResponseFromRequest(req *gosnmp.SnmpPacket, vars []gosnmp.SnmpPDU, errCode gosnmp.SNMPError, errIndex uint8) *gosnmp.SnmpPacket {
@@ -134,25 +319,23 @@ func (va *VirtualAgent) buildResponseFromRequest(req *gosnmp.SnmpPacket, vars []
 	response := buildResponseFromRequest(req, vars, errCode, errIndex)
 
 	if response.Version == gosnmp.Version3 {
-		response.MsgFlags = gosnmp.NoAuthNoPriv
+		response.MsgFlags = req.MsgFlags & gosnmp.AuthPriv
 		response.SecurityModel = gosnmp.UserSecurityModel
-		response.ContextEngineID = va.v3EngineID
+		response.ContextEngineID = va.v3Config.EngineID
 
-		username := va.v3Username
+		username := va.v3Config.Username
 		if req.SecurityParameters != nil {
 			if usm, ok := req.SecurityParameters.(*gosnmp.UsmSecurityParameters); ok && usm.UserName != "" {
 				username = usm.UserName
 			}
 		}
 
-		response.SecurityParameters = &gosnmp.UsmSecurityParameters{
-			AuthoritativeEngineID:    va.v3EngineID,
-			AuthoritativeEngineBoots: 1,
-			AuthoritativeEngineTime:  uint32(time.Since(va.startTime).Seconds()),
-			UserName:                 username,
-			AuthenticationProtocol:   gosnmp.NoAuth,
-			PrivacyProtocol:          gosnmp.NoPriv,
-		}
+		cfg := va.v3ConfigForFlags(response.MsgFlags)
+		cfg.Username = username
+		response.SecurityParameters = cfg.BuildUSM(
+			va.v3EngineBoots,
+			uint32(time.Since(va.startTime).Seconds()),
+		)
 	}
 
 	return response
@@ -162,6 +345,9 @@ func (va *VirtualAgent) shouldSendV3DiscoveryReport(req *gosnmp.SnmpPacket) bool
 	if req == nil || req.Version != gosnmp.Version3 {
 		return false
 	}
+	if !va.v3Config.Enabled {
+		return false
+	}
 
 	usm, ok := req.SecurityParameters.(*gosnmp.UsmSecurityParameters)
 	if !ok || usm == nil {
@@ -169,6 +355,69 @@ func (va *VirtualAgent) shouldSendV3DiscoveryReport(req *gosnmp.SnmpPacket) bool
 	}
 
 	return usm.AuthoritativeEngineID == ""
+}
+
+func (va *VirtualAgent) validateUSMWindow(req *gosnmp.SnmpPacket) string {
+	if req == nil || req.Version != gosnmp.Version3 {
+		return ""
+	}
+
+	usm, ok := req.SecurityParameters.(*gosnmp.UsmSecurityParameters)
+	if !ok || usm == nil {
+		return v3.USMStatsUnknownEngineIDOID
+	}
+
+	if usm.AuthoritativeEngineID != "" && usm.AuthoritativeEngineID != va.v3Config.EngineID {
+		return v3.USMStatsUnknownEngineIDOID
+	}
+
+	if usm.AuthoritativeEngineID != "" {
+		now := uint32(time.Since(va.startTime).Seconds())
+		if usm.AuthoritativeEngineBoots != va.v3EngineBoots {
+			return v3.USMStatsNotInTimeWindowOID
+		}
+
+		var diff uint32
+		if now > usm.AuthoritativeEngineTime {
+			diff = now - usm.AuthoritativeEngineTime
+		} else {
+			diff = usm.AuthoritativeEngineTime - now
+		}
+		if diff > 150 {
+			return v3.USMStatsNotInTimeWindowOID
+		}
+	}
+
+	return ""
+}
+
+func (va *VirtualAgent) handleV3USMReport(req *gosnmp.SnmpPacket, oid string) []byte {
+	response := va.buildResponseFromRequest(req, []gosnmp.SnmpPDU{v3.BuildUSMReportVar(oid)}, gosnmp.NoError, 0)
+	response.PDUType = gosnmp.Report
+
+	data, err := marshalPacket(response)
+	if err != nil {
+		log.Printf("Device %d: Failed to marshal v3 USM report: %v", va.deviceID, err)
+		return nil
+	}
+	return data
+}
+
+func (va *VirtualAgent) v3ConfigForFlags(flags gosnmp.SnmpV3MsgFlags) v3.Config {
+	cfg := va.v3Config
+	level := flags & gosnmp.AuthPriv
+	if level == gosnmp.NoAuthNoPriv {
+		cfg.Auth = v3.AuthNone
+		cfg.AuthKey = ""
+		cfg.Priv = v3.PrivNone
+		cfg.PrivKey = ""
+		return cfg
+	}
+	if level == gosnmp.AuthNoPriv {
+		cfg.Priv = v3.PrivNone
+		cfg.PrivKey = ""
+	}
+	return cfg
 }
 
 func (va *VirtualAgent) handleV3DiscoveryReport(req *gosnmp.SnmpPacket) []byte {
@@ -193,7 +442,7 @@ func (va *VirtualAgent) handleV3DiscoveryReport(req *gosnmp.SnmpPacket) []byte {
 		usm.UserName = requestUsername
 	}
 
-	data, err := response.MarshalMsg()
+	data, err := marshalPacket(response)
 	if err != nil {
 		log.Printf("Device %d: Failed to marshal v3 discovery report: %v", va.deviceID, err)
 		return nil
@@ -224,7 +473,7 @@ func (va *VirtualAgent) handleGetRequest(req *gosnmp.SnmpPacket) []byte {
 	outPacket := va.buildResponseFromRequest(req, vars, gosnmp.NoError, 0)
 
 	// Marshal response
-	data, err := outPacket.MarshalMsg()
+	data, err := marshalPacket(outPacket)
 	if err != nil {
 		log.Printf("Device %d: Failed to marshal response: %v", va.deviceID, err)
 		return nil
@@ -256,7 +505,7 @@ func (va *VirtualAgent) handleGetNextRequest(req *gosnmp.SnmpPacket) []byte {
 	// Marshal response without holding lock
 	outPacket := va.buildResponseFromRequest(req, vars, gosnmp.NoError, 0)
 
-	data, err := outPacket.MarshalMsg()
+	data, err := marshalPacket(outPacket)
 	if err != nil {
 		log.Printf("Device %d: Failed to marshal response: %v", va.deviceID, err)
 		return nil
@@ -318,7 +567,7 @@ func (va *VirtualAgent) handleGetBulkRequest(req *gosnmp.SnmpPacket) []byte {
 
 	outPacket := va.buildResponseFromRequest(req, vars, gosnmp.NoError, 0)
 
-	data, err := outPacket.MarshalMsg()
+	data, err := marshalPacket(outPacket)
 	if err != nil {
 		log.Printf("Device %d: Failed to marshal GETBULK response: %v", va.deviceID, err)
 		return nil
@@ -331,7 +580,7 @@ func (va *VirtualAgent) handleGetBulkRequest(req *gosnmp.SnmpPacket) []byte {
 func (va *VirtualAgent) handleSetRequest(req *gosnmp.SnmpPacket) []byte {
 	outPacket := va.buildResponseFromRequest(req, []gosnmp.SnmpPDU{}, 4, 1)
 
-	data, err := outPacket.MarshalMsg()
+	data, err := marshalPacket(outPacket)
 	if err != nil {
 		log.Printf("Device %d: Failed to marshal SET response: %v", va.deviceID, err)
 		return nil
@@ -383,7 +632,15 @@ func (va *VirtualAgent) getNextOID(oid string) (string, *store.OIDValue) {
 	oid = normalizeOID(oid)
 	// Try index manager first (optimized for table traversal)
 	if va.indexManager != nil {
-		return va.indexManager.GetNext(oid, va.oidDB)
+		nextOID, val := va.indexManager.GetNext(oid, va.oidDB)
+		// If index manager returned a value with unknown type (0/EndOfContents),
+		// resolve the proper type from the OID database or system OIDs.
+		if val != nil && val.Type == gosnmp.EndOfContents {
+			if resolved := va.getOIDValue(nextOID); resolved != nil && resolved.Type != gosnmp.NoSuchObject {
+				val = resolved
+			}
+		}
+		return nextOID, val
 	}
 
 	// Fallback: basic database traversal

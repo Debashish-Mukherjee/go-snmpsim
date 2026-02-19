@@ -93,8 +93,8 @@ func (t *SNMPTable) GetValue(colIndex int, rowIndex string) (interface{}, bool, 
 // Used by GetNext and GetBulk operations
 // Returns: next OID, value, found
 func (t *SNMPTable) GetNextValue(colIndex int, rowIndex string) (string, interface{}, bool) {
-	// Find current position
-	rowPos := sort.SearchStrings(t.SortedRowIDs, rowIndex)
+	// Find current position using numeric-aware search
+	rowPos := searchRowIDs(t.SortedRowIDs, rowIndex)
 
 	// Try next row in current column
 	if rowPos < len(t.SortedRowIDs)-1 {
@@ -131,7 +131,7 @@ func (t *SNMPTable) GetNextValue(colIndex int, rowIndex string) (string, interfa
 // GetNextRowForColumn finds the next row in a column
 // Used for efficient column traversal
 func (t *SNMPTable) GetNextRowForColumn(colIndex int, currentRowIndex string) (string, interface{}, bool) {
-	rowPos := sort.SearchStrings(t.SortedRowIDs, currentRowIndex)
+	rowPos := searchRowIDs(t.SortedRowIDs, currentRowIndex)
 
 	for i := rowPos + 1; i < len(t.SortedRowIDs); i++ {
 		nextRow := t.SortedRowIDs[i]
@@ -185,6 +185,14 @@ func (t *SNMPTable) ColumnCount() int {
 	return len(t.Columns)
 }
 
+// searchRowIDs finds the position of rowIndex in sorted SortedRowIDs using numeric OID ordering.
+// If rowIndex is not found, returns the position where it would be inserted.
+func searchRowIDs(sortedIDs []string, rowIndex string) int {
+	return sort.Search(len(sortedIDs), func(i int) bool {
+		return !isOIDLess(sortedIDs[i], rowIndex)
+	})
+}
+
 // rebuildSortedRows rebuilds the sorted row index list
 // Called after modifications to maintain consistent ordering
 func (t *SNMPTable) rebuildSortedRows() {
@@ -192,7 +200,10 @@ func (t *SNMPTable) rebuildSortedRows() {
 	for rowID := range t.Rows {
 		t.SortedRowIDs = append(t.SortedRowIDs, rowID)
 	}
-	sort.Strings(t.SortedRowIDs)
+	// Use numeric OID ordering so row "2" sorts before "10"
+	sort.Slice(t.SortedRowIDs, func(i, j int) bool {
+		return isOIDLess(t.SortedRowIDs[i], t.SortedRowIDs[j])
+	})
 
 	if len(t.SortedRowIDs) > 0 {
 		t.MinRow = t.SortedRowIDs[0]
@@ -237,14 +248,26 @@ func ParseTableOID(oid string) (string, int, string, error) {
 }
 
 // IsTableEntry checks if an OID is part of a table entry
-// Tables have pattern: ENTRY.COLUMN.INDEX where ENTRY ends in .1
+// Tables have pattern: ENTRY.COLUMN.INDEX where ENTRY ends in .1 and INDEX >= 1.
+// Scalar OIDs always end in .0 (instance 0) and must NOT be classified as table entries.
 func IsTableEntry(oid string) bool {
 	parts := strings.Split(oid, ".")
 	if len(parts) < 4 {
 		return false
 	}
 
-	// Check if second-to-last dot group is a number (column index)
+	// Scalars always end in .0 — never a table row.
+	if parts[len(parts)-1] == "0" {
+		return false
+	}
+
+	// Row instance must be a positive integer >= 1.
+	var rowIndex int
+	if _, err := fmt.Sscanf(parts[len(parts)-1], "%d", &rowIndex); err != nil || rowIndex < 1 {
+		return false
+	}
+
+	// Column index (second-to-last component) must be a non-negative integer.
 	var colIndex int
 	if _, err := fmt.Sscanf(parts[len(parts)-2], "%d", &colIndex); err != nil {
 		return false

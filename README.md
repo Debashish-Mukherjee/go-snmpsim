@@ -11,7 +11,9 @@
 - **Current Release**: `v1.0.0`
 - **Release Date**: 2026-02-18
 - **Highlights**:
-  - SNMPv2c + SNMPv3 (`noAuthNoPriv`) support in simulator
+  - SNMPv2c + full SNMPv3 (noAuthNoPriv / authNoPriv / authPriv) support in simulator
+  - HMAC authentication and AES/DES privacy fully implemented with RFC 3414 compliance
+  - Correct USM security error Reports (unknownEngineID, notInTimeWindow, wrongDigest)
   - Zabbix host provisioning updated for SNMPv3 interfaces
   - End-to-end SNMPv3 polling verified with history collection
   - First 50 active hosts migrated to SNMPv3 (`cisco-iosxr-001` to `cisco-iosxr-050`)
@@ -20,7 +22,7 @@
 
 - 🔥 **High Performance** - Handle 10,000+ PDU/sec per port with O(log n) OID lookups
 - 📡 **Multi-Device Simulation** - Simulate 1,000+ virtual SNMP devices simultaneously
-- 🎯 **Protocol Support** - SNMP v2c and SNMPv3 (noAuthNoPriv)
+- 🎯 **Protocol Support** - SNMP v2c and full SNMPv3 (noAuthNoPriv / authNoPriv / authPriv)
 - 🗂️ **Flexible Data Loading** - Support for `.snmprec` files, snmpwalk output (3 formats)
 - 🔧 **Production Ready** - Context-based graceful shutdown, resource monitoring
 - 📊 **Zabbix Optimized** - Table indexing for LLD, <100ms response for 1,056 OIDs
@@ -70,6 +72,46 @@ snmpwalk -v2c -c public localhost:20000 1.3.6.1.2.1
 snmpbulkwalk -v2c -c public localhost:20000 1.3.6.1.2.1.2.2.1
 ```
 
+### SNMPv3 Quick Start
+
+Start the simulator with SNMPv3 authentication and privacy enabled:
+
+```bash
+./snmpsim \
+  -port-start=20000 -port-end=20000 -devices=1 \
+  -snmpv3-enabled \
+  -snmpv3-user simuser \
+  -snmpv3-auth SHA \
+  -snmpv3-auth-key authpass123 \
+  -snmpv3-priv AES128 \
+  -snmpv3-priv-key privpass123
+```
+
+Then query using any security level:
+
+```bash
+# Discovery / no security
+snmpget -v3 -l noAuthNoPriv -u simuser localhost:20000 1.3.6.1.2.1.1.5.0
+
+# Authentication only (authNoPriv)
+snmpwalk -v3 -l authNoPriv -u simuser \
+  -a SHA -A authpass123 \
+  localhost:20000 1.3.6.1.2.1.1
+
+# Authentication + privacy (authPriv)
+snmpwalk -v3 -l authPriv -u simuser \
+  -a SHA -A authpass123 \
+  -x AES -X privpass123 \
+  localhost:20000 1.3.6.1.2.1
+```
+
+**Supported protocols:**
+
+| Role | Options |
+|------|---------|
+| Auth | `MD5`, `SHA` (SHA-1), `SHA224`, `SHA256`, `SHA384`, `SHA512` |
+| Priv | `DES`, `AES128`, `AES192`, `AES256` |
+
 ## 🏆 Scale to 1,000+ Hosts with Zabbix
 
 See **[docs/SCALING_GUIDE.md](docs/SCALING_GUIDE.md)** for complete instructions to deploy:
@@ -110,8 +152,18 @@ Options:
         Path to .snmprec file for OID templates
   -listen string
         Listen address (default: 0.0.0.0)
-    -snmpv3-user string
-      SNMPv3 username for noAuthNoPriv requests (default: simuser)
+  -snmpv3-enabled
+        Enable SNMPv3 support (default: false)
+  -snmpv3-user string
+        SNMPv3 username (default: simuser)
+  -snmpv3-auth string
+        SNMPv3 auth protocol: MD5, SHA, SHA224, SHA256, SHA384, SHA512 (default: SHA)
+  -snmpv3-auth-key string
+        SNMPv3 authentication passphrase
+  -snmpv3-priv string
+        SNMPv3 privacy protocol: DES, AES128, AES192, AES256 (default: AES128)
+  -snmpv3-priv-key string
+        SNMPv3 privacy passphrase
 ```
 
 ## 🏗️ Architecture

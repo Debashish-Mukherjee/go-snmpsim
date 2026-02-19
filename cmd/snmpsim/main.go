@@ -6,10 +6,12 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/debashish-mukherjee/go-snmpsim/internal/api"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/engine"
+	"github.com/debashish-mukherjee/go-snmpsim/internal/v3"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/webui"
 )
 
@@ -20,17 +22,53 @@ func main() {
 	devices := flag.Int("devices", 100, "Number of virtual devices to simulate")
 	snmprecFile := flag.String("snmprec", "", "Path to .snmprec file for OID templates")
 	listenAddr := flag.String("listen", "0.0.0.0", "Listen address")
-	v3User := flag.String("snmpv3-user", "simuser", "SNMPv3 username for noAuthNoPriv requests")
+	v3Enabled := flag.Bool("v3-enabled", true, "Enable SNMPv3 support")
+	engineID := flag.String("engine-id", "", "SNMPv3 authoritative engine ID (hex or plain text)")
+	v3User := flag.String("v3-user", "simuser", "SNMPv3 username")
+	legacyV3User := flag.String("snmpv3-user", "", "Deprecated alias of --v3-user")
+	v3Auth := flag.String("v3-auth", "", "SNMPv3 auth protocol: MD5,SHA1,SHA224,SHA256,SHA384,SHA512")
+	v3AuthKey := flag.String("v3-auth-key", "", "SNMPv3 auth passphrase")
+	v3Priv := flag.String("v3-priv", "", "SNMPv3 priv protocol: DES,3DES,AES128,AES192,AES256")
+	v3PrivKey := flag.String("v3-priv-key", "", "SNMPv3 privacy passphrase")
 	webPort := flag.String("web-port", "8080", "Port for web UI API server")
 	flag.Parse()
 
 	// Check file descriptors
 	checkFileDescriptors(*portEnd - *portStart)
 
+	if *legacyV3User != "" {
+		*v3User = *legacyV3User
+	}
+
+	parsedEngineID, err := v3.ParseEngineID(*engineID)
+	if err != nil {
+		log.Fatalf("Invalid engine ID: %v", err)
+	}
+
+	v3Config := v3.Config{
+		Enabled:  *v3Enabled,
+		EngineID: parsedEngineID,
+		Username: *v3User,
+		Auth:     v3.AuthProtocol(strings.ToUpper(*v3Auth)),
+		AuthKey:  *v3AuthKey,
+		Priv:     v3.PrivProtocol(strings.ToUpper(*v3Priv)),
+		PrivKey:  *v3PrivKey,
+	}
+
+	if v3Config.Enabled {
+		if err := v3Config.Validate(); err != nil {
+			log.Fatalf("Invalid SNMPv3 config: %v", err)
+		}
+	}
+
 	log.Printf("Starting SNMP Simulator")
 	log.Printf("SNMP Port range: %d-%d", *portStart, *portEnd)
 	log.Printf("Number of devices: %d", *devices)
-	log.Printf("SNMPv3 user: %s", *v3User)
+	if v3Config.Enabled {
+		log.Printf("SNMPv3 enabled: user=%s auth=%s priv=%s", v3Config.Username, v3Config.Auth, v3Config.Priv)
+	} else {
+		log.Printf("SNMPv3 enabled: false")
+	}
 	log.Printf("Web UI port: %s (http://localhost:%s)", *webPort, *webPort)
 
 	// Create simulator
@@ -40,7 +78,7 @@ func main() {
 		*portEnd,
 		*devices,
 		*snmprecFile,
-		*v3User,
+		v3Config,
 	)
 	if err != nil {
 		log.Fatalf("Failed to create simulator: %v", err)

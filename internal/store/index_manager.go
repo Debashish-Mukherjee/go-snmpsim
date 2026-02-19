@@ -200,6 +200,23 @@ func (im *OIDIndexManager) getNextTableOID(oid string, db *OIDDatabase) (string,
 	// Parse the table OID
 	entryOID, colIndex, rowIndex, err := ParseTableOID(oid)
 	if err != nil {
+		// oid might be the entry OID itself (e.g. "1.3.6.1.2.1.2.2.1") or the table
+		// base (e.g. "1.3.6.1.2.1.2.2") — not a row entry. Find first cell of the table.
+		entryKey := oid
+		if _, ok := im.tables[entryKey]; !ok {
+			entryKey = oid + ".1"
+		}
+		if table, ok := im.tables[entryKey]; ok {
+			oidStr, _, _, val, found := table.GetFirstValue()
+			if found && val != nil {
+				valObj := db.Get(oidStr)
+				if valObj == nil {
+					valObj = &OIDValue{Type: 0, Value: val}
+				}
+				return oidStr, valObj
+			}
+			return im.getOIDAfterTable(entryKey, db)
+		}
 		// Not a valid table OID, return next non-table OID
 		idx := sort.SearchStrings(im.sortedOIDs, oid)
 		if idx < len(im.sortedOIDs) && im.sortedOIDs[idx] == oid {
