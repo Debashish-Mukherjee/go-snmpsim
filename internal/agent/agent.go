@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/debashish-mukherjee/go-snmpsim/internal/routing"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/store"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/v3"
 	"github.com/gosnmp/gosnmp"
@@ -24,7 +26,9 @@ type VirtualAgent struct {
 	v3Config      v3.Config
 	v3EngineBoots uint32
 	oidDB         *store.OIDDatabase
-	indexManager  *store.OIDIndexManager  // Index manager for Zabbix LLD (table-aware)
+	indexManager  *store.OIDIndexManager // Index manager for Zabbix LLD (table-aware)
+	datasetStore  *store.DatasetStore
+	router        *routing.Router
 	deviceMapping *store.DeviceOIDMapping // Device-specific OID overrides
 	deviceOverlay map[string]interface{}  // Device-specific value overrides
 	uptime        uint32
@@ -66,6 +70,14 @@ func (va *VirtualAgent) SetIndexManager(im *store.OIDIndexManager) {
 	va.indexManager = im
 }
 
+// SetRouting assigns request routing and dataset registry to this agent.
+func (va *VirtualAgent) SetRouting(router *routing.Router, datasetStore *store.DatasetStore) {
+	va.mu.Lock()
+	defer va.mu.Unlock()
+	va.router = router
+	va.datasetStore = datasetStore
+}
+
 // SetDeviceMapping assigns device-specific OID mappings to this agent
 func (va *VirtualAgent) SetDeviceMapping(mapping *store.DeviceOIDMapping) {
 	va.mu.Lock()
@@ -75,6 +87,11 @@ func (va *VirtualAgent) SetDeviceMapping(mapping *store.DeviceOIDMapping) {
 
 // HandlePacket processes an incoming SNMP packet and returns a response
 func (va *VirtualAgent) HandlePacket(packet []byte) []byte {
+	return va.HandlePacketFrom(packet, nil, va.port)
+}
+
+// HandlePacketFrom processes a packet including endpoint metadata used by dataset routing.
+func (va *VirtualAgent) HandlePacketFrom(packet []byte, remoteAddr *net.UDPAddr, dstPort int) []byte {
 	count := va.pollCount.Add(1)
 	va.lastPoll = time.Now()
 
@@ -98,16 +115,57 @@ func (va *VirtualAgent) HandlePacket(packet []byte) []byte {
 		return va.handleV3DiscoveryReport(req)
 	}
 
+	activeDB, activeIndex := va.selectDataset(req, remoteAddr, dstPort)
+
 	switch req.PDUType {
 	case gosnmp.GetNextRequest:
-		return va.handleGetNextRequest(req)
+		return va.handleGetNextRequest(req, activeDB, activeIndex)
 	case gosnmp.SetRequest:
 		return va.handleSetRequest(req)
 	case gosnmp.GetBulkRequest:
-		return va.handleGetBulkRequest(req)
+		return va.handleGetBulkRequest(req, activeDB, activeIndex)
 	default:
-		return va.handleGetRequest(req)
+		return va.handleGetRequest(req, activeDB)
 	}
+}
+
+func (va *VirtualAgent) selectDataset(req *gosnmp.SnmpPacket, remoteAddr *net.UDPAddr, dstPort int) (*store.OIDDatabase, *store.OIDIndexManager) {
+	va.mu.RLock()
+	defaultDB := va.oidDB
+	defaultIndex := va.indexManager
+	router := va.router
+	datasetStore := va.datasetStore
+	va.mu.RUnlock()
+
+	if router == nil || datasetStore == nil || req == nil {
+		return defaultDB, defaultIndex
+	}
+
+	srcIP := ""
+	if remoteAddr != nil && remoteAddr.IP != nil {
+		srcIP = remoteAddr.IP.String()
+	}
+
+	engineID := req.ContextEngineID
+	if req.Version == gosnmp.Version3 && req.SecurityParameters != nil {
+		if usm, ok := req.SecurityParameters.(*gosnmp.UsmSecurityParameters); ok && usm != nil && usm.AuthoritativeEngineID != "" {
+			engineID = usm.AuthoritativeEngineID
+		}
+	}
+
+	path := router.Select(routing.RequestKey{
+		Community: req.Community,
+		Context:   req.ContextName,
+		EngineID:  engineID,
+		SrcIP:     srcIP,
+		DstPort:   dstPort,
+	})
+
+	routedDB, routedIndex := datasetStore.Resolve(path)
+	if routedDB == nil {
+		return defaultDB, defaultIndex
+	}
+	return routedDB, routedIndex
 }
 
 func (va *VirtualAgent) decodePacket(packet []byte) (*gosnmp.SnmpPacket, string, error) {
@@ -452,16 +510,16 @@ func (va *VirtualAgent) handleV3DiscoveryReport(req *gosnmp.SnmpPacket) []byte {
 }
 
 // handleGetRequest processes GET requests
-func (va *VirtualAgent) handleGetRequest(req *gosnmp.SnmpPacket) []byte {
+func (va *VirtualAgent) handleGetRequest(req *gosnmp.SnmpPacket, oidDB *store.OIDDatabase) []byte {
 	// Pre-allocate response variables
 	vars := make([]gosnmp.SnmpPDU, 0, len(req.Variables))
-	
+
 	// Process each variable with minimal lock time
 	for _, v := range req.Variables {
 		va.mu.RLock()
-		value := va.getOIDValue(v.Name)
+		value := va.getOIDValue(oidDB, v.Name)
 		va.mu.RUnlock()
-		
+
 		vars = append(vars, gosnmp.SnmpPDU{
 			Name:  v.Name,
 			Type:  value.Type,
@@ -483,16 +541,16 @@ func (va *VirtualAgent) handleGetRequest(req *gosnmp.SnmpPacket) []byte {
 }
 
 // handleGetNextRequest processes GETNEXT requests (walk operation)
-func (va *VirtualAgent) handleGetNextRequest(req *gosnmp.SnmpPacket) []byte {
+func (va *VirtualAgent) handleGetNextRequest(req *gosnmp.SnmpPacket, oidDB *store.OIDDatabase, indexManager *store.OIDIndexManager) []byte {
 	// Pre-allocate response variables
 	vars := make([]gosnmp.SnmpPDU, 0, len(req.Variables))
-	
+
 	// Process each variable with minimal lock time
 	for _, v := range req.Variables {
 		va.mu.RLock()
-		nextOID, val := va.getNextOID(v.Name)
+		nextOID, val := va.getNextOID(indexManager, oidDB, v.Name)
 		va.mu.RUnlock()
-		
+
 		if val != nil {
 			vars = append(vars, gosnmp.SnmpPDU{
 				Name:  nextOID,
@@ -516,7 +574,7 @@ func (va *VirtualAgent) handleGetNextRequest(req *gosnmp.SnmpPacket) []byte {
 
 // handleGetBulkRequest processes GETBULK requests (efficient walk)
 // Zabbix default: NonRepeaters=0, MaxRepeaters=10
-func (va *VirtualAgent) handleGetBulkRequest(req *gosnmp.SnmpPacket) []byte {
+func (va *VirtualAgent) handleGetBulkRequest(req *gosnmp.SnmpPacket, oidDB *store.OIDDatabase, indexManager *store.OIDIndexManager) []byte {
 	// Pre-allocate response variables
 	nonRepeaters := int(req.NonRepeaters)
 	if nonRepeaters < 0 {
@@ -533,9 +591,9 @@ func (va *VirtualAgent) handleGetBulkRequest(req *gosnmp.SnmpPacket) []byte {
 	for i, v := range req.Variables {
 		if i < nonRepeaters {
 			va.mu.RLock()
-			nextOID, val := va.getNextOID(v.Name)
+			nextOID, val := va.getNextOID(indexManager, oidDB, v.Name)
 			va.mu.RUnlock()
-			
+
 			if val != nil {
 				vars = append(vars, gosnmp.SnmpPDU{
 					Name:  nextOID,
@@ -550,9 +608,9 @@ func (va *VirtualAgent) handleGetBulkRequest(req *gosnmp.SnmpPacket) []byte {
 		currentOID := v.Name
 		for r := 0; r < maxRepeaters; r++ {
 			va.mu.RLock()
-			nextOID, val := va.getNextOID(currentOID)
+			nextOID, val := va.getNextOID(indexManager, oidDB, currentOID)
 			va.mu.RUnlock()
-			
+
 			if val == nil || val.Type == gosnmp.EndOfMibView {
 				break
 			}
@@ -591,7 +649,10 @@ func (va *VirtualAgent) handleSetRequest(req *gosnmp.SnmpPacket) []byte {
 
 // getOIDValue retrieves the value for a specific OID
 // Priority: device mapping (port/device-specific) > device overlay > system OIDs > OID database
-func (va *VirtualAgent) getOIDValue(oid string) *store.OIDValue {
+func (va *VirtualAgent) getOIDValue(oidDB *store.OIDDatabase, oid string) *store.OIDValue {
+	if oidDB == nil {
+		return &store.OIDValue{Type: gosnmp.NoSuchObject, Value: nil}
+	}
 	oid = normalizeOID(oid)
 	// Check device mapping first (highest priority)
 	if va.deviceMapping != nil {
@@ -614,7 +675,7 @@ func (va *VirtualAgent) getOIDValue(oid string) *store.OIDValue {
 	}
 
 	// Query OID database
-	val := va.oidDB.Get(oid)
+	val := oidDB.Get(oid)
 	if val != nil {
 		return val
 	}
@@ -628,15 +689,18 @@ func (va *VirtualAgent) getOIDValue(oid string) *store.OIDValue {
 
 // getNextOID retrieves the next OID after the given one
 // Uses index manager if available for table-aware traversal (Zabbix LLD)
-func (va *VirtualAgent) getNextOID(oid string) (string, *store.OIDValue) {
+func (va *VirtualAgent) getNextOID(indexManager *store.OIDIndexManager, oidDB *store.OIDDatabase, oid string) (string, *store.OIDValue) {
+	if oidDB == nil {
+		return normalizeOID(oid), &store.OIDValue{Type: gosnmp.EndOfMibView, Value: nil}
+	}
 	oid = normalizeOID(oid)
 	// Try index manager first (optimized for table traversal)
-	if va.indexManager != nil {
-		nextOID, val := va.indexManager.GetNext(oid, va.oidDB)
+	if indexManager != nil {
+		nextOID, val := indexManager.GetNext(oid, oidDB)
 		// If index manager returned a value with unknown type (0/EndOfContents),
 		// resolve the proper type from the OID database or system OIDs.
 		if val != nil && val.Type == gosnmp.EndOfContents {
-			if resolved := va.getOIDValue(nextOID); resolved != nil && resolved.Type != gosnmp.NoSuchObject {
+			if resolved := va.getOIDValue(oidDB, nextOID); resolved != nil && resolved.Type != gosnmp.NoSuchObject {
 				val = resolved
 			}
 		}
@@ -644,7 +708,7 @@ func (va *VirtualAgent) getNextOID(oid string) (string, *store.OIDValue) {
 	}
 
 	// Fallback: basic database traversal
-	nextOID := va.oidDB.GetNext(oid)
+	nextOID := oidDB.GetNext(oid)
 	if nextOID == "" {
 		return oid, &store.OIDValue{
 			Type:  gosnmp.EndOfMibView,
@@ -652,7 +716,7 @@ func (va *VirtualAgent) getNextOID(oid string) (string, *store.OIDValue) {
 		}
 	}
 
-	value := va.getOIDValue(nextOID)
+	value := va.getOIDValue(oidDB, nextOID)
 	return nextOID, value
 }
 

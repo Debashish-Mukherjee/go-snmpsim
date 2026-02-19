@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/debashish-mukherjee/go-snmpsim/internal/agent"
+	"github.com/debashish-mukherjee/go-snmpsim/internal/routing"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/store"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/v3"
 	"golang.org/x/sys/unix"
@@ -18,13 +19,16 @@ import (
 
 // Simulator manages multiple UDP listeners for virtual SNMP agents
 type Simulator struct {
-	listenAddr  string
-	portStart   int
-	portEnd     int
-	numDevices  int
-	snmprecFile string
-	v3Config    v3.Config
-	v3State     *v3.EngineStateStore
+	listenAddr   string
+	portStart    int
+	portEnd      int
+	numDevices   int
+	snmprecFile  string
+	routeFile    string
+	v3Config     v3.Config
+	v3State      *v3.EngineStateStore
+	router       *routing.Router
+	datasetStore *store.DatasetStore
 
 	// Listeners and dispatcher
 	listeners    map[int]*net.UDPConn        // port -> listener
@@ -42,7 +46,7 @@ type Simulator struct {
 }
 
 // NewSimulator creates a new SNMP simulator instance
-func NewSimulator(listenAddr string, portStart, portEnd, numDevices int, snmprecFile string, v3Config v3.Config) (*Simulator, error) {
+func NewSimulator(listenAddr string, portStart, portEnd, numDevices int, snmprecFile string, routeFile string, v3Config v3.Config) (*Simulator, error) {
 	if portStart >= portEnd {
 		return nil, fmt.Errorf("portStart must be less than portEnd")
 	}
@@ -68,6 +72,7 @@ func NewSimulator(listenAddr string, portStart, portEnd, numDevices int, snmprec
 		portEnd:     portEnd,
 		numDevices:  numDevices,
 		snmprecFile: snmprecFile,
+		routeFile:   routeFile,
 		v3Config:    v3Config,
 		v3State:     v3State,
 		listeners:   make(map[int]*net.UDPConn),
@@ -82,10 +87,29 @@ func NewSimulator(listenAddr string, portStart, portEnd, numDevices int, snmprec
 	// Initialize dispatcher
 	sim.dispatcher = NewPacketDispatcher(sim.packetPool)
 
-	// Load OID database
-	oidDB, err := store.LoadOIDDatabase(snmprecFile)
+	var routeEngine *routing.Router
+	if routeFile != "" {
+		routeEngine, err = routing.LoadFromFile(routeFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load route file: %w", err)
+		}
+	}
+
+	extraDatasetPaths := []string{}
+	if routeEngine != nil {
+		extraDatasetPaths = routeEngine.DatasetPaths()
+	}
+
+	datasetStore, err := store.NewDatasetStore(snmprecFile, extraDatasetPaths)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load OID database: %w", err)
+		return nil, fmt.Errorf("failed to initialize dataset store: %w", err)
+	}
+	sim.router = routeEngine
+	sim.datasetStore = datasetStore
+
+	oidDB, _ := datasetStore.Resolve("")
+	if oidDB == nil {
+		return nil, fmt.Errorf("default dataset could not be resolved")
 	}
 
 	// Create index manager for Zabbix LLD support
@@ -141,6 +165,7 @@ func (s *Simulator) createVirtualAgents(oidDB *store.OIDDatabase) error {
 		if s.indexManager != nil {
 			agent.SetIndexManager(s.indexManager)
 		}
+		agent.SetRouting(s.router, s.datasetStore)
 
 		s.agents[port] = agent
 		deviceID++
@@ -233,7 +258,7 @@ func (s *Simulator) handleListener(ctx context.Context, conn *net.UDPConn, port 
 		}
 
 		// Dispatch packet to agent
-		response := agent.HandlePacket(buffer[:n])
+		response := agent.HandlePacketFrom(buffer[:n], remoteAddr, port)
 		s.packetPool.Put(buffer) // Return buffer after processing
 
 		if response != nil {

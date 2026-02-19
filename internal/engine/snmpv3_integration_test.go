@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,6 +26,11 @@ func requireDockerAndSNMP(t *testing.T) {
 
 func startV3Simulator(t *testing.T) (context.CancelFunc, string) {
 	t.Helper()
+	return startV3SimulatorWithRoute(t, "")
+}
+
+func startV3SimulatorWithRoute(t *testing.T, routeFile string) (context.CancelFunc, string) {
+	t.Helper()
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatalf("resolve repo root: %v", err)
@@ -35,15 +41,15 @@ func startV3Simulator(t *testing.T) (context.CancelFunc, string) {
 	}
 
 	cfg := v3.Config{
-		Enabled: true,
+		Enabled:  true,
 		Username: "simuser",
-		Auth: v3.AuthSHA1,
-		AuthKey: "authpass123",
-		Priv: v3.PrivAES128,
-		PrivKey: "privpass123",
+		Auth:     v3.AuthSHA1,
+		AuthKey:  "authpass123",
+		Priv:     v3.PrivAES128,
+		PrivKey:  "privpass123",
 	}
 
-	sim, err := NewSimulator("0.0.0.0", 20000, 20002, 1, snmprec, cfg)
+	sim, err := NewSimulator("0.0.0.0", 20000, 20002, 1, snmprec, routeFile, cfg)
 	if err != nil {
 		t.Fatalf("NewSimulator: %v", err)
 	}
@@ -59,6 +65,70 @@ func startV3Simulator(t *testing.T) (context.CancelFunc, string) {
 
 	time.Sleep(2 * time.Second)
 	return cancel, "127.0.0.1:20000"
+}
+
+func TestDatasetRoutingByCommunityAndContext(t *testing.T) {
+	requireDockerAndSNMP(t)
+
+	tmpDir := t.TempDir()
+	testOID := "1.3.6.1.4.1.55555.1.0"
+	datasetA := filepath.Join(tmpDir, "dataset-a.snmprec")
+	datasetB := filepath.Join(tmpDir, "dataset-b.snmprec")
+
+	if err := os.WriteFile(datasetA, []byte(testOID+"|octetstring|Dataset-A\n"), 0o644); err != nil {
+		t.Fatalf("write dataset A: %v", err)
+	}
+	if err := os.WriteFile(datasetB, []byte(testOID+"|octetstring|Dataset-B\n"), 0o644); err != nil {
+		t.Fatalf("write dataset B: %v", err)
+	}
+
+	routeFile := filepath.Join(tmpDir, "routes.yaml")
+	routes := fmt.Sprintf("routes:\n"+
+		"  - match:\n"+
+		"      context: ctxBlue\n"+
+		"      engineID: \"\"\n"+
+		"    action:\n"+
+		"      datasetPath: %s\n"+
+		"  - match:\n"+
+		"      community: private\n"+
+		"    action:\n"+
+		"      datasetPath: %s\n"+
+		"  - match: {}\n"+
+		"    action:\n"+
+		"      datasetPath: %s\n", datasetB, datasetB, datasetA)
+
+	if err := os.WriteFile(routeFile, []byte(routes), 0o644); err != nil {
+		t.Fatalf("write route file: %v", err)
+	}
+
+	_, target := startV3SimulatorWithRoute(t, routeFile)
+
+	communityDefaultCmd := "snmpget -On -v2c -c public " + target + " " + testOID
+	outDefault, err := runSNMPCmd(t, target, communityDefaultCmd)
+	if err != nil {
+		t.Fatalf("default community query failed: %v\n%s", err, outDefault)
+	}
+	if !strings.Contains(outDefault, "Dataset-A") {
+		t.Fatalf("expected Dataset-A for default community route, got:\n%s", outDefault)
+	}
+
+	communityPrivateCmd := "snmpget -On -v2c -c private " + target + " " + testOID
+	outPrivate, err := runSNMPCmd(t, target, communityPrivateCmd)
+	if err != nil {
+		t.Fatalf("private community query failed: %v\n%s", err, outPrivate)
+	}
+	if !strings.Contains(outPrivate, "Dataset-B") {
+		t.Fatalf("expected Dataset-B for community=private route, got:\n%s", outPrivate)
+	}
+
+	contextCmd := "snmpget -On -v3 -l noAuthNoPriv -u simuser -n ctxBlue " + target + " " + testOID
+	outCtx, err := runSNMPCmd(t, target, contextCmd)
+	if err != nil {
+		t.Fatalf("context query failed: %v\n%s", err, outCtx)
+	}
+	if !strings.Contains(outCtx, "Dataset-B") {
+		t.Fatalf("expected Dataset-B for context route, got:\n%s", outCtx)
+	}
 }
 
 func runSNMPCmd(t *testing.T, target string, args ...string) (string, error) {

@@ -8,8 +8,8 @@
 
 ## 📦 Release
 
-- **Current Release**: `v1.0.0`
-- **Release Date**: 2026-02-18
+- **Current Release**: `v1.1`
+- **Release Date**: 2026-02-19
 - **Highlights**:
   - SNMPv2c + full SNMPv3 (noAuthNoPriv / authNoPriv / authPriv) support in simulator
   - HMAC authentication and AES/DES privacy fully implemented with RFC 3414 compliance
@@ -135,6 +135,35 @@ go test ./internal/engine/... -v -count=1 -timeout 240s
 
 Note: these integration tests require Docker and a running Docker daemon because test commands execute `net-snmp-tools` in a container.
 
+### Dataset Routing with routes.yaml
+
+Use `--route-file` to serve different datasets from the same listening port based on request metadata.
+
+Supported matchers per route:
+- `community` (SNMPv1/v2c)
+- `context` (SNMPv3 contextName)
+- `engineID` (SNMPv3 authoritative engine ID)
+- `srcIP` (sender IP)
+- `dstPort` (listener UDP port)
+
+Priority order is deterministic:
+1. `engineID + context`
+2. `context`
+3. `community`
+4. `endpoint` (`srcIP` / `dstPort`)
+5. `default`
+
+Example route file: [examples/routes.yaml](examples/routes.yaml)
+
+Run with routing enabled:
+
+```bash
+./snmpsim \
+      -port-start=20000 -port-end=20000 -devices=1 \
+      -snmprec sample.snmprec \
+      -route-file examples/routes.yaml
+```
+
 ## 🏆 Scale to 1,000+ Hosts with Zabbix
 
 See **[docs/SCALING_GUIDE.md](docs/SCALING_GUIDE.md)** for complete instructions to deploy:
@@ -173,6 +202,8 @@ Options:
         Number of virtual devices to simulate (default: 100)
   -snmprec string
         Path to .snmprec file for OID templates
+  -route-file string
+        Path to routes.yaml for dataset routing
   -listen string
         Listen address (default: 0.0.0.0)
   -snmpv3-enabled

@@ -1,0 +1,39 @@
+# Dataset routing rules for go-snmpsim
+# Priority (highest to lowest):
+#   1) engineID + context
+#   2) context
+#   3) community
+#   4) endpoint (srcIP/dstPort)
+#   5) default
+
+routes:
+  # Most specific: SNMPv3 context + engineID
+  - match:
+      context: ctx-blue
+      engineID: 80001f8880e963000001
+    action:
+      datasetPath: examples/testdata/advanced-templates.snmprec
+
+  # SNMPv3 context only
+  - match:
+      context: ctx-green
+    action:
+      datasetPath: examples/testdata/template-interfaces.snmprec
+
+  # SNMPv2c/v1 community-based routing
+  - match:
+      community: private
+    action:
+      datasetPath: examples/testdata/device-mapping.snmprec
+
+  # Endpoint-based routing (destination port and/or source IP)
+  - match:
+      dstPort: 20000
+      srcIP: 127.0.0.1
+    action:
+      datasetPath: examples/testdata/zabbix-48port-switch.snmprec
+
+  # Default fallback route (must be last)
+  - match: {}
+    action:
+      datasetPath: sample.snmprec
