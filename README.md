@@ -201,16 +201,53 @@ Run with variations:
 
 Stress suite validates startup/listeners and concurrent SNMP GET/BULK operations across 2000 devices.
 
+Included variants:
+- SNMPv2c stress sweep (`TestStress2000CiscoIOSDevices`)
+- SNMPv3 noAuthNoPriv stress sweep (`TestStress2000CiscoIOSDevicesV3NoAuthNoPriv`)
+- 10-minute soak mode (`TestStressSoak10Minutes`, opt-in)
+
 Run:
 
 ```bash
 ./scripts/stress_test_2000.sh
 ```
 
+Default run executes v2 stress only for stable baseline validation.
+
+Run v3 variant only:
+
+```bash
+./scripts/stress_test_2000.sh --v3-only
+```
+
+If the environment cannot establish successful SNMPv3 noAuthNoPriv responses at this scale, the v3 test reports diagnostics and is marked as skipped.
+
+Run default v2 plus optional v3 variant:
+
+```bash
+./scripts/stress_test_2000.sh --with-v3
+```
+
+Run soak mode (default 10m):
+
+```bash
+./scripts/stress_test_2000.sh --soak
+```
+
+Run soak smoke (example 30s):
+
+```bash
+./scripts/stress_test_2000.sh --soak --duration 30s
+```
+
 Direct command:
 
 ```bash
-go test -tags stress ./internal/engine -run TestStress2000CiscoIOSDevices -v -count=1 -timeout 20m
+go test -tags stress ./internal/engine -run 'TestStress2000CiscoIOSDevices|TestStress2000CiscoIOSDevicesV3NoAuthNoPriv' -v -count=1 -timeout 20m
+
+SNMPSIM_STRESS_SOAK=1 SNMPSIM_STRESS_SOAK_DURATION=10m \
+SNMPSIM_STRESS_SOAK_MAX_FAILURE=0.90 \
+go test -tags stress ./internal/engine -run TestStressSoak10Minutes -v -count=1 -timeout 30m
 ```
 
 ## 🏆 Scale to 1,000+ Hosts with Zabbix
