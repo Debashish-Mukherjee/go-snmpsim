@@ -1,6 +1,6 @@
 # Repository Documentation Index
 
-> **Release**: `v1.1` (2026-02-19) — includes SNMPv3 end-to-end support, comprehensive interaction tests, and dataset routing.
+> **Release**: `v1.2` (2026-02-19) — includes SNMPv3 end-to-end support, dataset routing, variation plugins, and 2000-device stress suite.
 
 ## Quick Start
 
@@ -216,4 +216,4 @@ go-snmpsim/
 ---
 
 Last Updated: February 19, 2026  
-Status: ✅ Release v1.1 - SNMPv2c + SNMPv3 + dataset routing ready
+Status: ✅ Release v1.2 - SNMPv2c + SNMPv3 + routing + variation + stress suite ready

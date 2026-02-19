@@ -1,0 +1,29 @@
+# OID Variation plugin example
+# Apply deterministic, composable variations by OID prefix.
+
+bindings:
+  # Interface in-octets counters: always increase by 5 per read
+  - prefix: "1.3.6.1.2.1.2.2.1.10"
+    variations:
+      - type: counterMonotonic
+        delta: 5
+
+  # Interface out-octets: periodic step changes
+  - prefix: "1.3.6.1.2.1.2.2.1.16"
+    variations:
+      - type: step
+        period: 10s
+        delta: 100
+
+  # Error counters with deterministic jitter
+  - prefix: "1.3.6.1.2.1.2.2.1.14"
+    variations:
+      - type: randomJitter
+        max: 3
+        seed: 42
+
+  # Reset behavior example
+  - prefix: "1.3.6.1.2.1.11"
+    variations:
+      - type: periodicReset
+        period: 60s

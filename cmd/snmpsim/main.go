@@ -22,6 +22,7 @@ func main() {
 	devices := flag.Int("devices", 100, "Number of virtual devices to simulate")
 	snmprecFile := flag.String("snmprec", "", "Path to .snmprec file for OID templates")
 	routeFile := flag.String("route-file", "", "Path to routes.yaml for dataset routing")
+	variationFile := flag.String("variation-file", "", "Path to variations.yaml for OID variation chains")
 	listenAddr := flag.String("listen", "0.0.0.0", "Listen address")
 	v3Enabled := flag.Bool("v3-enabled", true, "Enable SNMPv3 support")
 	engineID := flag.String("engine-id", "", "SNMPv3 authoritative engine ID (hex or plain text)")
@@ -80,6 +81,7 @@ func main() {
 		*devices,
 		*snmprecFile,
 		*routeFile,
+		*variationFile,
 		v3Config,
 	)
 	if err != nil {

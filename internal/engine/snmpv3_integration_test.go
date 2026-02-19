@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -26,10 +28,15 @@ func requireDockerAndSNMP(t *testing.T) {
 
 func startV3Simulator(t *testing.T) (context.CancelFunc, string) {
 	t.Helper()
-	return startV3SimulatorWithRoute(t, "")
+	return startV3SimulatorWithRouteAndVariation(t, "", "")
 }
 
 func startV3SimulatorWithRoute(t *testing.T, routeFile string) (context.CancelFunc, string) {
+	t.Helper()
+	return startV3SimulatorWithRouteAndVariation(t, routeFile, "")
+}
+
+func startV3SimulatorWithRouteAndVariation(t *testing.T, routeFile string, variationFile string) (context.CancelFunc, string) {
 	t.Helper()
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
@@ -49,7 +56,7 @@ func startV3SimulatorWithRoute(t *testing.T, routeFile string) (context.CancelFu
 		PrivKey:  "privpass123",
 	}
 
-	sim, err := NewSimulator("0.0.0.0", 20000, 20002, 1, snmprec, routeFile, cfg)
+	sim, err := NewSimulator("0.0.0.0", 20000, 20002, 1, snmprec, routeFile, variationFile, cfg)
 	if err != nil {
 		t.Fatalf("NewSimulator: %v", err)
 	}
@@ -65,6 +72,54 @@ func startV3SimulatorWithRoute(t *testing.T, routeFile string) (context.CancelFu
 
 	time.Sleep(2 * time.Second)
 	return cancel, "127.0.0.1:20000"
+}
+
+func TestVariationCounterChangesOnRepeatedWalk(t *testing.T) {
+	requireDockerAndSNMP(t)
+
+	tmpDir := t.TempDir()
+	variationFile := filepath.Join(tmpDir, "variations.yaml")
+	variationYAML := `bindings:
+  - prefix: "1.3.6.1.2.1.2.2.1.10"
+    variations:
+      - type: counterMonotonic
+        delta: 7
+`
+	if err := os.WriteFile(variationFile, []byte(variationYAML), 0o644); err != nil {
+		t.Fatalf("write variation file: %v", err)
+	}
+
+	_, target := startV3SimulatorWithRouteAndVariation(t, "", variationFile)
+
+	oid := "1.3.6.1.2.1.2.2.1.10.1"
+	cmd := "snmpwalk -On -v2c -c public " + target + " " + oid
+	out1, err := runSNMPCmd(t, target, cmd)
+	if err != nil {
+		t.Fatalf("first walk failed: %v\n%s", err, out1)
+	}
+	out2, err := runSNMPCmd(t, target, cmd)
+	if err != nil {
+		t.Fatalf("second walk failed: %v\n%s", err, out2)
+	}
+
+	parseCounter := func(raw string) uint64 {
+		re := regexp.MustCompile(`=\s*(?:Counter32|Counter64):\s*(\d+)`)
+		m := re.FindStringSubmatch(raw)
+		if len(m) != 2 {
+			t.Fatalf("counter value not found in output:\n%s", raw)
+		}
+		n, convErr := strconv.ParseUint(m[1], 10, 64)
+		if convErr != nil {
+			t.Fatalf("parse counter value: %v", convErr)
+		}
+		return n
+	}
+
+	v1 := parseCounter(out1)
+	v2 := parseCounter(out2)
+	if v2 <= v1 {
+		t.Fatalf("expected counter to increase between walks, got first=%d second=%d", v1, v2)
+	}
 }
 
 func TestDatasetRoutingByCommunityAndContext(t *testing.T) {

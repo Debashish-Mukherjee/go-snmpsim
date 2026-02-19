@@ -14,21 +14,24 @@ import (
 	"github.com/debashish-mukherjee/go-snmpsim/internal/routing"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/store"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/v3"
+	"github.com/debashish-mukherjee/go-snmpsim/internal/variation"
 	"golang.org/x/sys/unix"
 )
 
 // Simulator manages multiple UDP listeners for virtual SNMP agents
 type Simulator struct {
-	listenAddr   string
-	portStart    int
-	portEnd      int
-	numDevices   int
-	snmprecFile  string
-	routeFile    string
-	v3Config     v3.Config
-	v3State      *v3.EngineStateStore
-	router       *routing.Router
-	datasetStore *store.DatasetStore
+	listenAddr    string
+	portStart     int
+	portEnd       int
+	numDevices    int
+	snmprecFile   string
+	routeFile     string
+	variationFile string
+	v3Config      v3.Config
+	v3State       *v3.EngineStateStore
+	router        *routing.Router
+	datasetStore  *store.DatasetStore
+	variations    *variation.Binder
 
 	// Listeners and dispatcher
 	listeners    map[int]*net.UDPConn        // port -> listener
@@ -46,7 +49,7 @@ type Simulator struct {
 }
 
 // NewSimulator creates a new SNMP simulator instance
-func NewSimulator(listenAddr string, portStart, portEnd, numDevices int, snmprecFile string, routeFile string, v3Config v3.Config) (*Simulator, error) {
+func NewSimulator(listenAddr string, portStart, portEnd, numDevices int, snmprecFile string, routeFile string, variationFile string, v3Config v3.Config) (*Simulator, error) {
 	if portStart >= portEnd {
 		return nil, fmt.Errorf("portStart must be less than portEnd")
 	}
@@ -67,16 +70,17 @@ func NewSimulator(listenAddr string, portStart, portEnd, numDevices int, snmprec
 	}
 
 	sim := &Simulator{
-		listenAddr:  listenAddr,
-		portStart:   portStart,
-		portEnd:     portEnd,
-		numDevices:  numDevices,
-		snmprecFile: snmprecFile,
-		routeFile:   routeFile,
-		v3Config:    v3Config,
-		v3State:     v3State,
-		listeners:   make(map[int]*net.UDPConn),
-		agents:      make(map[int]*agent.VirtualAgent),
+		listenAddr:    listenAddr,
+		portStart:     portStart,
+		portEnd:       portEnd,
+		numDevices:    numDevices,
+		snmprecFile:   snmprecFile,
+		routeFile:     routeFile,
+		variationFile: variationFile,
+		v3Config:      v3Config,
+		v3State:       v3State,
+		listeners:     make(map[int]*net.UDPConn),
+		agents:        make(map[int]*agent.VirtualAgent),
 		packetPool: &sync.Pool{
 			New: func() interface{} {
 				return make([]byte, 4096)
@@ -92,6 +96,13 @@ func NewSimulator(listenAddr string, portStart, portEnd, numDevices int, snmprec
 		routeEngine, err = routing.LoadFromFile(routeFile)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load route file: %w", err)
+		}
+	}
+
+	if variationFile != "" {
+		sim.variations, err = variation.LoadBinder(variationFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load variation file: %w", err)
 		}
 	}
 
@@ -166,6 +177,7 @@ func (s *Simulator) createVirtualAgents(oidDB *store.OIDDatabase) error {
 			agent.SetIndexManager(s.indexManager)
 		}
 		agent.SetRouting(s.router, s.datasetStore)
+		agent.SetVariationBinder(s.variations)
 
 		s.agents[port] = agent
 		deviceID++

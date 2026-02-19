@@ -15,6 +15,7 @@ import (
 	"github.com/debashish-mukherjee/go-snmpsim/internal/routing"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/store"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/v3"
+	"github.com/debashish-mukherjee/go-snmpsim/internal/variation"
 	"github.com/gosnmp/gosnmp"
 )
 
@@ -29,6 +30,7 @@ type VirtualAgent struct {
 	indexManager  *store.OIDIndexManager // Index manager for Zabbix LLD (table-aware)
 	datasetStore  *store.DatasetStore
 	router        *routing.Router
+	variations    *variation.Binder
 	deviceMapping *store.DeviceOIDMapping // Device-specific OID overrides
 	deviceOverlay map[string]interface{}  // Device-specific value overrides
 	uptime        uint32
@@ -76,6 +78,13 @@ func (va *VirtualAgent) SetRouting(router *routing.Router, datasetStore *store.D
 	defer va.mu.Unlock()
 	va.router = router
 	va.datasetStore = datasetStore
+}
+
+// SetVariationBinder assigns OID-prefix variation chains to this agent.
+func (va *VirtualAgent) SetVariationBinder(binder *variation.Binder) {
+	va.mu.Lock()
+	defer va.mu.Unlock()
+	va.variations = binder
 }
 
 // SetDeviceMapping assigns device-specific OID mappings to this agent
@@ -513,6 +522,7 @@ func (va *VirtualAgent) handleV3DiscoveryReport(req *gosnmp.SnmpPacket) []byte {
 func (va *VirtualAgent) handleGetRequest(req *gosnmp.SnmpPacket, oidDB *store.OIDDatabase) []byte {
 	// Pre-allocate response variables
 	vars := make([]gosnmp.SnmpPDU, 0, len(req.Variables))
+	now := time.Now()
 
 	// Process each variable with minimal lock time
 	for _, v := range req.Variables {
@@ -520,11 +530,25 @@ func (va *VirtualAgent) handleGetRequest(req *gosnmp.SnmpPacket, oidDB *store.OI
 		value := va.getOIDValue(oidDB, v.Name)
 		va.mu.RUnlock()
 
-		vars = append(vars, gosnmp.SnmpPDU{
+		pdu := gosnmp.SnmpPDU{
 			Name:  v.Name,
 			Type:  value.Type,
 			Value: value.Value,
-		})
+		}
+
+		applied, err := va.applyVariations(now, pdu)
+		if err != nil {
+			if errors.Is(err, variation.ErrDropOID) {
+				continue
+			}
+			if errors.Is(err, variation.ErrTimeout) {
+				return nil
+			}
+			log.Printf("Device %d: variation error for %s: %v", va.deviceID, pdu.Name, err)
+			applied = pdu
+		}
+
+		vars = append(vars, applied)
 	}
 
 	// Marshal response without holding lock
@@ -544,6 +568,7 @@ func (va *VirtualAgent) handleGetRequest(req *gosnmp.SnmpPacket, oidDB *store.OI
 func (va *VirtualAgent) handleGetNextRequest(req *gosnmp.SnmpPacket, oidDB *store.OIDDatabase, indexManager *store.OIDIndexManager) []byte {
 	// Pre-allocate response variables
 	vars := make([]gosnmp.SnmpPDU, 0, len(req.Variables))
+	now := time.Now()
 
 	// Process each variable with minimal lock time
 	for _, v := range req.Variables {
@@ -552,11 +577,25 @@ func (va *VirtualAgent) handleGetNextRequest(req *gosnmp.SnmpPacket, oidDB *stor
 		va.mu.RUnlock()
 
 		if val != nil {
-			vars = append(vars, gosnmp.SnmpPDU{
+			pdu := gosnmp.SnmpPDU{
 				Name:  nextOID,
 				Type:  val.Type,
 				Value: val.Value,
-			})
+			}
+
+			applied, err := va.applyVariations(now, pdu)
+			if err != nil {
+				if errors.Is(err, variation.ErrDropOID) {
+					continue
+				}
+				if errors.Is(err, variation.ErrTimeout) {
+					return nil
+				}
+				log.Printf("Device %d: variation error for %s: %v", va.deviceID, pdu.Name, err)
+				applied = pdu
+			}
+
+			vars = append(vars, applied)
 		}
 	}
 
@@ -586,6 +625,7 @@ func (va *VirtualAgent) handleGetBulkRequest(req *gosnmp.SnmpPacket, oidDB *stor
 	}
 
 	vars := make([]gosnmp.SnmpPDU, 0, len(req.Variables)*maxRepeaters)
+	now := time.Now()
 
 	// Process each variable with minimal lock time
 	for i, v := range req.Variables {
@@ -595,11 +635,25 @@ func (va *VirtualAgent) handleGetBulkRequest(req *gosnmp.SnmpPacket, oidDB *stor
 			va.mu.RUnlock()
 
 			if val != nil {
-				vars = append(vars, gosnmp.SnmpPDU{
+				pdu := gosnmp.SnmpPDU{
 					Name:  nextOID,
 					Type:  val.Type,
 					Value: val.Value,
-				})
+				}
+
+				applied, err := va.applyVariations(now, pdu)
+				if err != nil {
+					if errors.Is(err, variation.ErrDropOID) {
+						continue
+					}
+					if errors.Is(err, variation.ErrTimeout) {
+						return nil
+					}
+					log.Printf("Device %d: variation error for %s: %v", va.deviceID, pdu.Name, err)
+					applied = pdu
+				}
+
+				vars = append(vars, applied)
 			}
 			continue
 		}
@@ -614,11 +668,26 @@ func (va *VirtualAgent) handleGetBulkRequest(req *gosnmp.SnmpPacket, oidDB *stor
 			if val == nil || val.Type == gosnmp.EndOfMibView {
 				break
 			}
-			vars = append(vars, gosnmp.SnmpPDU{
+			pdu := gosnmp.SnmpPDU{
 				Name:  nextOID,
 				Type:  val.Type,
 				Value: val.Value,
-			})
+			}
+
+			applied, err := va.applyVariations(now, pdu)
+			if err != nil {
+				if errors.Is(err, variation.ErrDropOID) {
+					currentOID = nextOID
+					continue
+				}
+				if errors.Is(err, variation.ErrTimeout) {
+					return nil
+				}
+				log.Printf("Device %d: variation error for %s: %v", va.deviceID, pdu.Name, err)
+				applied = pdu
+			}
+
+			vars = append(vars, applied)
 			currentOID = nextOID
 		}
 	}
@@ -645,6 +714,18 @@ func (va *VirtualAgent) handleSetRequest(req *gosnmp.SnmpPacket) []byte {
 	}
 
 	return data
+}
+
+func (va *VirtualAgent) applyVariations(now time.Time, pdu gosnmp.SnmpPDU) (gosnmp.SnmpPDU, error) {
+	va.mu.RLock()
+	binder := va.variations
+	va.mu.RUnlock()
+
+	if binder == nil {
+		return pdu, nil
+	}
+
+	return binder.Apply(now, pdu)
 }
 
 // getOIDValue retrieves the value for a specific OID

@@ -8,7 +8,7 @@
 
 ## 📦 Release
 
-- **Current Release**: `v1.1`
+- **Current Release**: `v1.2`
 - **Release Date**: 2026-02-19
 - **Highlights**:
   - SNMPv2c + full SNMPv3 (noAuthNoPriv / authNoPriv / authPriv) support in simulator
@@ -164,6 +164,55 @@ Run with routing enabled:
       -route-file examples/routes.yaml
 ```
 
+### OID Variation Plugins
+
+Use `--variation-file` to apply variation chains to returned OIDs before response encoding.
+
+Built-ins:
+- `counterMonotonic`
+- `randomJitter`
+- `step`
+- `periodicReset`
+- `dropOID`
+- `timeout`
+
+Example file (`variations.yaml`):
+
+```yaml
+bindings:
+      - prefix: "1.3.6.1.2.1.2.2.1.10"
+            variations:
+                  - type: counterMonotonic
+                        delta: 7
+```
+
+Ready-to-use sample: [examples/variations.yaml](examples/variations.yaml)
+
+Run with variations:
+
+```bash
+./snmpsim \
+      -port-start=20000 -port-end=20000 -devices=1 \
+      -snmprec sample.snmprec \
+      -variation-file variations.yaml
+```
+
+### 2000-Device Stress Suite (Cisco IOS-style)
+
+Stress suite validates startup/listeners and concurrent SNMP GET/BULK operations across 2000 devices.
+
+Run:
+
+```bash
+./scripts/stress_test_2000.sh
+```
+
+Direct command:
+
+```bash
+go test -tags stress ./internal/engine -run TestStress2000CiscoIOSDevices -v -count=1 -timeout 20m
+```
+
 ## 🏆 Scale to 1,000+ Hosts with Zabbix
 
 See **[docs/SCALING_GUIDE.md](docs/SCALING_GUIDE.md)** for complete instructions to deploy:
@@ -204,6 +253,8 @@ Options:
         Path to .snmprec file for OID templates
   -route-file string
         Path to routes.yaml for dataset routing
+  -variation-file string
+        Path to variations.yaml for OID variation chains
   -listen string
         Listen address (default: 0.0.0.0)
   -snmpv3-enabled
