@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  # SNMP Simulator
+  snmpsim:
+    image: golang:1.22-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+      - /app/go-build
+    command: >
+      sh -c "go build -o /tmp/snmpsim ./cmd/snmpsim/main.go &&
+             /tmp/snmpsim
+             --listen-addr=0.0.0.0
+             --port-start=10000
+             --port-end=10100
+             --num-devices=50
+             --snmprec-file=./sample.snmprec"
+    ports:
+      - "10000-10100:10000-10100/udp"
+    networks:
+      - snmpsim-net
+    depends_on:
+      - api
+    container_name: snmpsim-simulator
+
+  # REST API Service
+  api:
+    image: golang:1.22-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+      - /app/go-build
+    command: >
+      sh -c "go build -o /tmp/snmpsim-api ./cmd/snmpsim-api/main.go &&
+             /tmp/snmpsim-api
+             --api-addr=0.0.0.0:8080
+             --metrics-addr=0.0.0.0:9090"
+    ports:
+      - "8080:8080"     # API server
+      - "9090:9090"     # Prometheus metrics
+    networks:
+      - snmpsim-net
+    container_name: snmpsim-api
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-storage:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    networks:
+      - snmpsim-net
+    depends_on:
+      - api
+    container_name: snmpsim-prometheus
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - snmpsim-net
+    depends_on:
+      - prometheus
+    container_name: snmpsim-grafana
+
+volumes:
+  prometheus-storage:
+  grafana-storage:
+
+networks:
+  snmpsim-net:
+    driver: bridge

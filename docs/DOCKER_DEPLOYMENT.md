@@ -1,4 +1,415 @@
-# Docker Deployment Guide
+# Docker Deployment Guide - v1.5
+
+This guide covers deploying the SNMP Simulator API, Prometheus metrics collection, and Grafana visualization using Docker Compose.
+
+## Prerequisites
+
+- Docker 20.10+ and Docker Compose 2.0+
+- 2GB+ available memory
+- Ports available: 8080 (API), 9090 (Prometheus), 9091 (Prometheus Web), 3000 (Grafana)
+
+## Quick Start
+
+### 1. Clone and Navigate
+
+```bash
+cd /path/to/go-snmpsim
+```
+
+### 2. Start the Stack
+
+```bash
+docker-compose up -d
+```
+
+This will start:
+- **snmpsim-api** - REST API on http://localhost:8080
+- **snmpsim-simulator** - SNMP simulator on ports 10000-10100/udp
+- **snmpsim-prometheus** - Metrics storage on http://localhost:9091
+- **snmpsim-grafana** - Visualization on http://localhost:3000
+
+### 3. Verify Services
+
+```bash
+# Check API health
+curl http://localhost:8080/health
+
+# Check Prometheus scrape targets
+curl http://localhost:9091/api/v1/targets
+
+# Access Grafana
+# Visit http://localhost:3000
+# Login: admin / admin
+```
+
+### 4. Create and Start a Lab
+
+```bash
+# Create an engine
+ENGINE=$(curl -s -X POST http://localhost:8080/engines \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "docker-engine",
+    "engine_id": "800007e5",
+    "listen_addr": "snmpsim",
+    "port_start": 10000,
+    "port_end": 10050,
+    "num_devices": 20
+  }' | jq -r '.id')
+
+# Create a lab  
+LAB=$(curl -s -X POST http://localhost:8080/labs \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"name\": \"docker-lab\",
+    \"engine_id\": \"$ENGINE\"
+  }" | jq -r '.id')
+
+# Start the lab
+curl -s -X POST http://localhost:8080/labs/$LAB/start | jq
+
+# Monitor metrics
+curl -s http://localhost:9091/api/v1/query?query=snmpsim_labs_active
+```
+
+### 5. Access Grafana Dashboard
+
+1. Navigate to http://localhost:3000
+2. Login with credentials: `admin` / `admin`
+3. Select "SNMP Simulator Metrics" dashboard
+4. View real-time metrics for packets/sec, failures, latency, and active agents
+
+### 6. Stop Services
+
+```bash
+docker-compose down
+```
+
+To also remove persistent storage:
+
+```bash
+docker-compose down -v
+```
+
+---
+
+## Configuration
+
+### Environment Variables
+
+Create a `.env` file to customize settings:
+
+```bash
+# API Configuration
+API_ADDR=0.0.0.0:8080
+METRICS_ADDR=0.0.0.0:9090
+
+# Simulator Configuration
+LISTEN_ADDR=0.0.0.0
+PORT_START=10000
+PORT_END=10100
+NUM_DEVICES=50
+SNMPREC_FILE=./sample.snmprec
+
+# Prometheus Configuration
+SCRAPE_INTERVAL=15s
+EVALUATION_INTERVAL=15s
+```
+
+Then update `docker-compose.yml` to use these variables:
+
+```yaml
+environment:
+  - API_ADDR=${API_ADDR}
+  - METRICS_ADDR=${METRICS_ADDR}
+```
+
+### Volume Mounts
+
+To persist data or inject custom files:
+
+```yaml
+snmpsim:
+  volumes:
+    - ./custom-data:/app/data
+    - ./custom.snmprec:/app/custom.snmprec
+```
+
+---
+
+## Monitoring and Logging
+
+### View Docker Logs
+
+```bash
+# All services
+docker-compose logs -f
+
+# Specific service
+docker-compose logs -f api
+docker-compose logs -f snmpsim-prometheus
+```
+
+### Check Service Status
+
+```bash
+docker-compose ps
+```
+
+### Real-time Metrics Scrape
+
+```bash
+# Stream metrics from Prometheus
+curl -s http://localhost:9091/metrics | head -50
+
+# Query specific metric
+curl -s 'http://localhost:9091/api/v1/query?query=snmpsim_packets_total' | jq
+```
+
+---
+
+## Troubleshooting
+
+### API Not Responding
+
+```bash
+# Check if container is running
+docker-compose ps api
+
+# View logs
+docker-compose logs api
+
+# Verify port binding
+docker-compose port api 8080
+```
+
+### Prometheus Not Scraping Metrics
+
+```bash
+# Check targets in Prometheus UI
+curl http://localhost:9091/api/v1/targets
+
+# Check if API metrics endpoint is responding
+curl http://api:9090/metrics
+```
+
+### Grafana Dashboard Blank
+
+1. Verify Prometheus data source is configured: Grafana → Configuration → Data Sources
+2. Check if metrics are being collected: Run a lab and query Prometheus directly
+3. Verify dashboard JSON is valid in `/docker/grafana/dashboards/`
+
+### Memory Issues
+
+If containers are exiting due to memory limits:
+
+```yaml
+services:
+  api:
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+  prometheus:
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+```
+
+---
+
+## Scaling
+
+### Run Multiple Simulators
+
+Create separate services in `docker-compose.yml`:
+
+```yaml
+snmpsim-2:
+  image: golang:1.22-alpine
+  working_dir: /app
+  volumes:
+    - .:/app
+  command: >
+    /tmp/snmpsim
+    --listen-addr=0.0.0.0
+    --port-start=11000
+    --port-end=11100
+    --num-devices=50
+  ports:
+    - "11000-11100:11000-11100/udp"
+  networks:
+    - snmpsim-net
+```
+
+### Load Test Labs
+
+```bash
+# Create and start 10 labs concurrently
+for i in {1..10}; do
+  ENGINE=$(curl -s -X POST http://localhost:8080/engines \
+    -H "Content-Type: application/json" \
+    -d "{
+      \"name\": \"engine-$i\",
+      \"engine_id\": \"800007e$(printf '%x' $i)\",
+      \"listen_addr\": \"snmpsim\",
+      \"port_start\": $((10000 + i * 100)),
+      \"port_end\": $((10099 + i * 100)),
+      \"num_devices\": 20
+    }" | jq -r '.id')
+  
+  LAB=$(curl -s -X POST http://localhost:8080/labs \
+    -H "Content-Type: application/json" \
+    -d "{\"name\": \"lab-$i\", \"engine_id\": \"$ENGINE\"}" | jq -r '.id')
+  
+  curl -s -X POST http://localhost:8080/labs/$LAB/start > /dev/null
+  echo "Started lab-$i"
+done
+```
+
+---
+
+## Performance Tuning
+
+### Optimize Prometheus Storage
+
+```yaml
+prometheus:
+  command:
+    - "--config.file=/etc/prometheus/prometheus.yml"
+    - "--storage.tsdb.path=/prometheus"
+    - "--storage.tsdb.retention.time=7d"  # Retention period
+    - "--storage.tsdb.retention.size=1GB"  # Max storage
+```
+
+### Increase Scrape Timeout
+
+```yaml
+# In docker/prometheus.yml
+global:
+  scrape_interval: 10s         # More frequent scraping
+  evaluation_interval: 10s
+  scrape_timeout: 5s          # Timeout for scrapes
+```
+
+### Enable Compression
+
+```yaml
+api:
+  environment:
+    - GOMAXPROCS=4  # CPU cores
+```
+
+---
+
+## Cleanup and Maintenance
+
+### Remove All Data
+
+```bash
+docker-compose down -v --remove-orphans
+```
+
+### Update Images
+
+```bash
+docker-compose pull
+docker-compose up -d --build
+```
+
+### Backup Prometheus Data
+
+```bash
+docker cp snmpsim-prometheus:/prometheus ./prometheus-backup-$(date +%s)
+```
+
+### Restore Prometheus Data
+
+```bash
+docker cp ./prometheus-backup-<timestamp> snmpsim-prometheus:/prometheus
+docker-compose restart prometheus
+```
+
+---
+
+## Security
+
+### Change Default Credentials
+
+Update Grafana admin password via environment:
+
+```yaml
+grafana:
+  environment:
+    - GF_SECURITY_ADMIN_PASSWORD=your-secure-password
+```
+
+### Enable HTTPS
+
+Use a reverse proxy (nginx/traefik) in front of the stack:
+
+```yaml
+reverse-proxy:
+  image: traefik:latest
+  ports:
+    - "443:443"
+  volumes:
+    - ./traefik.yml:/traefik.yml
+    - ./ssl:/ssl
+```
+
+### Network Isolation
+
+Use a custom network and restrict container communication:
+
+```yaml
+networks:
+  snmpsim-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+```
+
+---
+
+## Integration Examples
+
+### Alert on High Failure Rate
+
+In Prometheus, create an alert rule (`docker/prometheus.yml`):
+
+```yaml
+alert_rules:
+  - alert: HighSNMPFailureRate
+    expr: rate(snmpsim_failures_total[5m]) > 0.1
+    for: 5m
+    annotations:
+      summary: "High SNMP failure rate detected"
+```
+
+### Export Metrics to InfluxDB
+
+Add an InfluxDB service and configure Prometheus remote write:
+
+```yaml
+influxdb:
+  image: influxdb:latest
+  environment:
+    - INFLUXDB_DB=snmpsim
+```
+
+Update `docker/prometheus.yml`:
+
+```yaml
+remote_write:
+  - url: "http://influxdb:8086/api/v1/prom/write?db=snmpsim"
+```
+
+---
+
+For more API documentation, see [REST_API.md](REST_API.md).
 
 This guide explains how to deploy the Go SNMP Simulator using Docker and Docker Compose.
 
