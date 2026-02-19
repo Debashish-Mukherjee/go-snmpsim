@@ -112,6 +112,29 @@ snmpwalk -v3 -l authPriv -u simuser \
 | Auth | `MD5`, `SHA` (SHA-1), `SHA224`, `SHA256`, `SHA384`, `SHA512` |
 | Priv | `DES`, `AES128`, `AES192`, `AES256` |
 
+### SNMP Interaction Test Matrix
+
+Comprehensive SNMP interaction coverage is provided by `TestSNMPInteractionsComprehensive` in `internal/engine/snmpv3_integration_test.go`.
+
+Coverage includes:
+- SNMPv1: GET (`snmpget`)
+- SNMPv2c: GET, GETNEXT, GETBULK, missing OID behavior, SET rejection (read-only)
+- SNMPv3: noAuthNoPriv GET, authNoPriv GETNEXT, authPriv BULKGET
+
+Run only the comprehensive matrix test:
+
+```bash
+go test ./internal/engine/... -run TestSNMPInteractionsComprehensive -v -count=1 -timeout 120s
+```
+
+Run all engine integration tests (matrix + SNMPv3 report/walk tests):
+
+```bash
+go test ./internal/engine/... -v -count=1 -timeout 240s
+```
+
+Note: these integration tests require Docker and a running Docker daemon because test commands execute `net-snmp-tools` in a container.
+
 ## 🏆 Scale to 1,000+ Hosts with Zabbix
 
 See **[docs/SCALING_GUIDE.md](docs/SCALING_GUIDE.md)** for complete instructions to deploy:

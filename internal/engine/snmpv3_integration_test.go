@@ -69,6 +69,99 @@ func runSNMPCmd(t *testing.T, target string, args ...string) (string, error) {
 	return string(out), err
 }
 
+func containsAny(s string, wants ...string) bool {
+	for _, w := range wants {
+		if strings.Contains(s, w) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestSNMPInteractionsComprehensive(t *testing.T) {
+	requireDockerAndSNMP(t)
+	_, target := startV3Simulator(t)
+
+	tests := []struct {
+		name         string
+		cmd          string
+		wantErr      bool
+		mustContain  []string
+		containOneOf []string
+	}{
+		{
+			name:        "v1_get_sysDescr",
+			cmd:         "snmpget -On -v1 -c public " + target + " 1.3.6.1.2.1.1.1.0",
+			mustContain: []string{".1.3.6.1.2.1.1.1.0", "STRING:"},
+		},
+		{
+			name:        "v2c_get_sysName",
+			cmd:         "snmpget -On -v2c -c public " + target + " 1.3.6.1.2.1.1.5.0",
+			mustContain: []string{".1.3.6.1.2.1.1.5.0", "Device-0"},
+		},
+		{
+			name:         "v2c_get_missing_oid",
+			cmd:          "snmpget -On -v2c -c public " + target + " 1.3.6.1.4.1.99999.1.0",
+			mustContain:  []string{".1.3.6.1.4.1.99999.1.0"},
+			containOneOf: []string{"No Such Object", "No Such Instance"},
+		},
+		{
+			name:        "v2c_getnext_system_tree",
+			cmd:         "snmpgetnext -On -v2c -c public " + target + " 1.3.6.1.2.1.1.1.0",
+			mustContain: []string{".1.3.6.1.2.1.1.2.0"},
+		},
+		{
+			name:        "v2c_getbulk_interfaces",
+			cmd:         "snmpbulkget -On -v2c -c public -Cn0 -Cr5 " + target + " 1.3.6.1.2.1.1.1.0",
+			mustContain: []string{".1.3.6.1.2.1.1.2.0", ".1.3.6.1.2.1.1.3.0"},
+		},
+		{
+			name:         "v2c_set_read_only_rejected",
+			cmd:          "snmpset -On -v2c -c public " + target + " 1.3.6.1.2.1.1.5.0 s changed-name",
+			wantErr:      true,
+			containOneOf: []string{"notWritable", "noAccess", "Reason:"},
+		},
+		{
+			name:        "v3_noauth_get",
+			cmd:         "snmpget -On -v3 -l noAuthNoPriv -u simuser " + target + " 1.3.6.1.2.1.1.5.0",
+			mustContain: []string{".1.3.6.1.2.1.1.5.0", "Device-0"},
+		},
+		{
+			name:        "v3_auth_getnext",
+			cmd:         "snmpgetnext -On -v3 -l authNoPriv -u simuser -a SHA -A authpass123 " + target + " 1.3.6.1.2.1.1.1.0",
+			mustContain: []string{".1.3.6.1.2.1.1.2.0"},
+		},
+		{
+			name:        "v3_authpriv_bulkget",
+			cmd:         "snmpbulkget -On -v3 -l authPriv -u simuser -a SHA -A authpass123 -x AES -X privpass123 -Cn0 -Cr5 " + target + " 1.3.6.1.2.1.1.1.0",
+			mustContain: []string{".1.3.6.1.2.1.1.2.0", ".1.3.6.1.2.1.1.3.0"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := runSNMPCmd(t, target, tc.cmd)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected command to fail, but it succeeded\ncommand: %s\noutput:\n%s", tc.cmd, out)
+				}
+			} else if err != nil {
+				t.Fatalf("command failed: %v\ncommand: %s\noutput:\n%s", err, tc.cmd, out)
+			}
+
+			for _, want := range tc.mustContain {
+				if !strings.Contains(out, want) {
+					t.Fatalf("expected output to contain %q\ncommand: %s\noutput:\n%s", want, tc.cmd, out)
+				}
+			}
+
+			if len(tc.containOneOf) > 0 && !containsAny(out, tc.containOneOf...) {
+				t.Fatalf("expected output to contain one of %v\ncommand: %s\noutput:\n%s", tc.containOneOf, tc.cmd, out)
+			}
+		})
+	}
+}
+
 func TestSNMPv3WalkAuthNoPrivAndAuthPriv(t *testing.T) {
 	requireDockerAndSNMP(t)
 	_, target := startV3Simulator(t)
