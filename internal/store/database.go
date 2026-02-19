@@ -1,17 +1,24 @@
 package store
 
 import (
+	"hash/fnv"
 	"log"
 	"sort"
 	"sync"
 
-	"github.com/armon/go-radix"
 	"github.com/gosnmp/gosnmp"
 )
 
+const defaultShardCount = 64
+
+type oidShard struct {
+	mu     sync.RWMutex
+	values map[string]*OIDValue
+}
+
 // OIDDatabase manages OID storage with efficient lookup and walk operations
 type OIDDatabase struct {
-	tree       *radix.Tree
+	shards     []oidShard
 	sortedOIDs []string // Pre-sorted OIDs for efficient GetNext
 	mu         sync.RWMutex
 }
@@ -24,8 +31,13 @@ type OIDValue struct {
 
 // NewOIDDatabase creates a new OID database
 func NewOIDDatabase() *OIDDatabase {
+	shards := make([]oidShard, defaultShardCount)
+	for i := range shards {
+		shards[i].values = make(map[string]*OIDValue)
+	}
+
 	return &OIDDatabase{
-		tree:       radix.New(),
+		shards:     shards,
 		sortedOIDs: make([]string, 0),
 	}
 }
@@ -33,36 +45,42 @@ func NewOIDDatabase() *OIDDatabase {
 // Insert adds an OID and its value to the database
 // Note: This does not sort. Call SortOIDs() after batch inserts.
 func (odb *OIDDatabase) Insert(oid string, value *OIDValue) {
-	odb.mu.Lock()
-	defer odb.mu.Unlock()
+	shard := odb.shardFor(oid)
+	shard.mu.Lock()
+	shard.values[oid] = value
+	shard.mu.Unlock()
 
-	odb.tree.Insert(oid, value)
+	odb.mu.Lock()
 	odb.sortedOIDs = append(odb.sortedOIDs, oid)
+	odb.mu.Unlock()
 }
 
 // BatchInsert adds multiple OIDs efficiently and sorts once at the end
 func (odb *OIDDatabase) BatchInsert(entries map[string]*OIDValue) {
-	odb.mu.Lock()
-	defer odb.mu.Unlock()
-
 	for oid, value := range entries {
-		odb.tree.Insert(oid, value)
+		shard := odb.shardFor(oid)
+		shard.mu.Lock()
+		shard.values[oid] = value
+		shard.mu.Unlock()
+
+		odb.mu.Lock()
 		odb.sortedOIDs = append(odb.sortedOIDs, oid)
+		odb.mu.Unlock()
 	}
 
+	odb.mu.Lock()
 	// Sort once after all inserts
 	quickSortOIDs(odb.sortedOIDs, 0, len(odb.sortedOIDs)-1)
+	odb.mu.Unlock()
 }
 
 // Get retrieves the value for an OID
 func (odb *OIDDatabase) Get(oid string) *OIDValue {
-	odb.mu.RLock()
-	defer odb.mu.RUnlock()
-
-	if val, ok := odb.tree.Get(oid); ok {
-		return val.(*OIDValue)
-	}
-	return nil
+	shard := odb.shardFor(oid)
+	shard.mu.RLock()
+	val := shard.values[oid]
+	shard.mu.RUnlock()
+	return val
 }
 
 // GetNext retrieves the next OID after the given one (for GETNEXT operations)
@@ -95,11 +113,15 @@ func (odb *OIDDatabase) GetNext(oid string) string {
 // Walk traverses all OIDs in the database (used for bulk operations)
 func (odb *OIDDatabase) Walk(callback func(oid string, value *OIDValue) bool) {
 	odb.mu.RLock()
-	defer odb.mu.RUnlock()
+	snapshot := append([]string(nil), odb.sortedOIDs...)
+	odb.mu.RUnlock()
 
-	for _, oid := range odb.sortedOIDs {
-		val, _ := odb.tree.Get(oid)
-		if !callback(oid, val.(*OIDValue)) {
+	for _, oid := range snapshot {
+		val := odb.Get(oid)
+		if val == nil {
+			continue
+		}
+		if !callback(oid, val) {
 			break
 		}
 	}
@@ -108,14 +130,22 @@ func (odb *OIDDatabase) Walk(callback func(oid string, value *OIDValue) bool) {
 // GetAll returns all OIDs (for debugging/inspection)
 func (odb *OIDDatabase) GetAll() map[string]*OIDValue {
 	odb.mu.RLock()
-	defer odb.mu.RUnlock()
+	snapshot := append([]string(nil), odb.sortedOIDs...)
+	odb.mu.RUnlock()
 
 	result := make(map[string]*OIDValue)
-	for _, oid := range odb.sortedOIDs {
-		val, _ := odb.tree.Get(oid)
-		result[oid] = val.(*OIDValue)
+	for _, oid := range snapshot {
+		if val := odb.Get(oid); val != nil {
+			result[oid] = val
+		}
 	}
 	return result
+}
+
+func (odb *OIDDatabase) shardFor(oid string) *oidShard {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(oid))
+	return &odb.shards[int(h.Sum32())%len(odb.shards)]
 }
 
 // SortOIDs sorts all OIDs for efficient traversal and removes duplicates

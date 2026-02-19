@@ -22,6 +22,7 @@ import (
 // Simulator manages multiple UDP listeners for virtual SNMP agents
 type Simulator struct {
 	listenAddr    string
+	listenAddr6   string
 	portStart     int
 	portEnd       int
 	numDevices    int
@@ -36,7 +37,7 @@ type Simulator struct {
 	trapManager   *traps.Manager
 
 	// Listeners and dispatcher
-	listeners    map[int]*net.UDPConn        // port -> listener
+	listeners    map[string]*net.UDPConn     // key -> listener
 	agents       map[int]*agent.VirtualAgent // port -> agent
 	dispatcher   *PacketDispatcher
 	indexManager *store.OIDIndexManager // Index manager for Zabbix LLD
@@ -81,7 +82,7 @@ func NewSimulator(listenAddr string, portStart, portEnd, numDevices int, snmprec
 		variationFile: variationFile,
 		v3Config:      v3Config,
 		v3State:       v3State,
-		listeners:     make(map[int]*net.UDPConn),
+		listeners:     make(map[string]*net.UDPConn),
 		agents:        make(map[int]*agent.VirtualAgent),
 		packetPool: &sync.Pool{
 			New: func() interface{} {
@@ -138,6 +139,13 @@ func NewSimulator(listenAddr string, portStart, portEnd, numDevices int, snmprec
 	}
 
 	return sim, nil
+}
+
+// SetListenAddr6 configures optional IPv6 UDP listener address (e.g. :: or ::1).
+func (s *Simulator) SetListenAddr6(addr string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.listenAddr6 = addr
 }
 
 // createVirtualAgents creates virtual agents mapped to ports
@@ -241,37 +249,40 @@ func (s *Simulator) Start(ctx context.Context) error {
 
 	// Create UDP listeners with SO_REUSEADDR/SO_REUSEPORT
 	for port := range s.agents {
-		addr := net.UDPAddr{
-			Port: port,
-			IP:   net.ParseIP(s.listenAddr),
-		}
-
-		// Create listener
-		conn, err := net.ListenUDP("udp", &addr)
-		if err != nil {
+		if err := s.startListener(ctx, "udp", s.listenAddr, port, "ipv4"); err != nil {
 			s.mu.Unlock()
 			s.cleanup()
-			return fmt.Errorf("failed to listen on port %d: %w", port, err)
+			return err
 		}
-
-		// Set socket options for better performance
-		if err := setSocketOptions(conn); err != nil {
-			conn.Close()
-			s.mu.Unlock()
-			s.cleanup()
-			return fmt.Errorf("failed to set socket options on port %d: %w", port, err)
+		if s.listenAddr6 != "" {
+			if err := s.startListener(ctx, "udp6", s.listenAddr6, port, "ipv6"); err != nil {
+				s.mu.Unlock()
+				s.cleanup()
+				return err
+			}
 		}
-
-		s.listeners[port] = conn
-
-		// Start listener goroutine
-		s.wg.Add(1)
-		go s.handleListener(ctx, conn, port)
 	}
 
 	s.mu.Unlock()
 
 	log.Printf("Started %d UDP listeners", len(s.listeners))
+	return nil
+}
+
+func (s *Simulator) startListener(ctx context.Context, network, listenAddr string, port int, family string) error {
+	addr := net.UDPAddr{Port: port, IP: net.ParseIP(listenAddr)}
+	conn, err := net.ListenUDP(network, &addr)
+	if err != nil {
+		return fmt.Errorf("failed to listen on %s port %d: %w", family, port, err)
+	}
+	if err := setSocketOptions(conn); err != nil {
+		_ = conn.Close()
+		return fmt.Errorf("failed to set socket options on %s port %d: %w", family, port, err)
+	}
+	key := fmt.Sprintf("%s:%d", family, port)
+	s.listeners[key] = conn
+	s.wg.Add(1)
+	go s.handleListener(ctx, conn, port)
 	return nil
 }
 
@@ -339,15 +350,15 @@ func (s *Simulator) cleanup() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for port, conn := range s.listeners {
+	for key, conn := range s.listeners {
 		// Set a past deadline to unblock any pending ReadFromUDP calls
 		// before closing the connection.
 		conn.SetDeadline(time.Now())
 		if err := conn.Close(); err != nil {
-			log.Printf("Error closing listener on port %d: %v", port, err)
+			log.Printf("Error closing listener %s: %v", key, err)
 		}
 	}
-	s.listeners = make(map[int]*net.UDPConn)
+	s.listeners = make(map[string]*net.UDPConn)
 }
 
 // Statistics returns current simulator statistics

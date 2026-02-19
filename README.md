@@ -8,7 +8,7 @@
 
 ## 📦 Release
 
-- **Current Release**: `v1.3`
+- **Current Release**: `v1.4`
 - **Release Date**: 2026-02-19
 - **Highlights**:
   - SNMPv2c + full SNMPv3 (noAuthNoPriv / authNoPriv / authPriv) support in simulator
@@ -18,7 +18,7 @@
   - End-to-end SNMPv3 polling verified with history collection
   - First 50 active hosts migrated to SNMPv3 (`cisco-iosxr-001` to `cisco-iosxr-050`)
 
-### Release Notes (v1.3)
+### Release Notes (v1.4)
 
 - Added `gosnmpsim-record` to learn live SNMP devices and export `.snmprec` using `OID|TYPE|VALUE`
 - Added `gosnmpsim-diff` to compare two recorded walks and report missing/value/type mismatches
@@ -29,6 +29,9 @@
 - Added trap builders for SNMPv2c and SNMPv3 (`--trap-version v2c|v3` + existing `--v3-*` auth/priv flags)
 - Added trigger support for cron specs, variation events, and SET attempts on selected OIDs
 - Added integration tests with `snmptrapd` validating trap varbinds and v3 auth-user acceptance
+- Added dual-stack UDP listeners with optional IPv6 bind (`--listen6`)
+- Reworked OID store to a sharded in-memory backend for higher concurrent lookup throughput
+- Added benchmark harness in `tests/bench` with p50/p95 latency profiles for 1k/5k/10k agent scales
 
 ## ✨ Features
 
@@ -91,12 +94,12 @@ Start the simulator with SNMPv3 authentication and privacy enabled:
 ```bash
 ./snmpsim \
   -port-start=20000 -port-end=20000 -devices=1 \
-  -snmpv3-enabled \
-  -snmpv3-user simuser \
-  -snmpv3-auth SHA \
-  -snmpv3-auth-key authpass123 \
-  -snmpv3-priv AES128 \
-  -snmpv3-priv-key privpass123
+      -v3-enabled \
+      -v3-user simuser \
+      -v3-auth SHA1 \
+      -v3-auth-key authpass123 \
+      -v3-priv AES128 \
+      -v3-priv-key privpass123
 ```
 
 Then query using any security level:
@@ -280,6 +283,52 @@ Trigger behavior:
 - `--trap-on-variation`: emits when variation engine changes or drops/times out an OID
 - `--trap-on-set-oid`: emits on SET attempts to matching OIDs
 
+### Dual-Stack Listeners (IPv4 + IPv6)
+
+Enable IPv4 and IPv6 UDP listeners simultaneously:
+
+```bash
+./snmpsim \
+      -port-start=20000 -port-end=20010 -devices=10 \
+      --listen 0.0.0.0 \
+      --listen6 ::
+```
+
+IPv6 walk example:
+
+```bash
+snmpwalk -v2c -c public udp6:[::1]:20000 1.3.6.1.2.1.1
+```
+
+### Scale Benchmarks (Sharded Store)
+
+Benchmark harness: `tests/bench/latency_bench_test.go`
+
+Observed latency profile (`SNMPSIM_RUN_BENCHMARKS=1`, 4000 samples, 16 workers):
+
+| Agents | p50 | p95 |
+|--------|-----|-----|
+| 1,000  | 226ns | 447ns |
+| 5,000  | 377ns | 740ns |
+| 10,000 | 398ns | 605ns |
+
+Concurrency benchmark (`go test -bench`) results:
+
+| Agents | ns/op | allocs/op |
+|--------|-------|-----------|
+| 1,000  | 22.50 | 0 |
+| 5,000  | 28.59 | 0 |
+| 10,000 | 44.49 | 0 |
+
+Run benchmark harness:
+
+```bash
+SNMPSIM_RUN_BENCHMARKS=1 SNMPSIM_BENCH_SAMPLES=4000 SNMPSIM_BENCH_WORKERS=16 \
+go test ./tests/bench -run TestStoreLatencyProfile -v -count=1
+
+go test ./tests/bench -bench BenchmarkStoreConcurrentGet -benchmem -run '^$' -count=1
+```
+
 ### 2000-Device Stress Suite (Cisco IOS-style)
 
 Stress suite validates startup/listeners and concurrent SNMP GET/BULK operations across 2000 devices.
@@ -377,18 +426,30 @@ Options:
         Path to variations.yaml for OID variation chains
   -listen string
         Listen address (default: 0.0.0.0)
-  -snmpv3-enabled
-        Enable SNMPv3 support (default: false)
-  -snmpv3-user string
+  -listen6 string
+        Optional IPv6 listen address (example: :: or ::1)
+  -v3-enabled
+        Enable SNMPv3 support (default: true)
+  -v3-user string
         SNMPv3 username (default: simuser)
-  -snmpv3-auth string
-        SNMPv3 auth protocol: MD5, SHA, SHA224, SHA256, SHA384, SHA512 (default: SHA)
-  -snmpv3-auth-key string
+  -v3-auth string
+        SNMPv3 auth protocol: MD5,SHA1,SHA224,SHA256,SHA384,SHA512
+  -v3-auth-key string
         SNMPv3 authentication passphrase
-  -snmpv3-priv string
-        SNMPv3 privacy protocol: DES, AES128, AES192, AES256 (default: AES128)
-  -snmpv3-priv-key string
+  -v3-priv string
+        SNMPv3 privacy protocol: DES,3DES,AES128,AES192,AES256
+  -v3-priv-key string
         SNMPv3 privacy passphrase
+  -trap-target host:port
+        Trap target (repeatable)
+  -trap-version string
+        Trap/Inform version: v2c|v3
+  -trap-cron spec
+        Cron trigger for trap emission (repeatable)
+  -trap-on-variation
+        Emit traps on variation events
+  -trap-on-set-oid oid
+        Emit trap on matching SET OID (repeatable)
 ```
 
 ## 🏗️ Architecture
@@ -420,7 +481,7 @@ go-snmpsim/
 │    ↓                                         │
 │  Virtual Agents (1000+)                     │
 │    ↓                                         │
-│  OID Database (Radix Tree + Index)          │
+│  OID Database (Sharded Store + Index)       │
 └─────────────────────────────────────────────┘
 ```
 
@@ -512,7 +573,7 @@ Override OIDs for specific ports/devices:
 | **Throughput** | 10,000+ PDU/sec per port |
 | **Latency** | <1ms typical, <100ms Zabbix LLD |
 | **Memory** | ~5-7 MB for 1,000 devices |
-| **OID Lookup** | O(log n) via radix tree |
+| **OID Lookup** | Sharded in-memory map + sorted index |
 | **Scalability** | Tested up to 1,000 devices |
 
 ### Benchmarks
@@ -558,10 +619,10 @@ make build-release
 We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 **Areas for contribution:**
-- SNMP v3 USM authentication
-- TRAP/Notification support
-- Additional OID templates
-- Performance optimizations
+- Additional OID templates and vendor profiles
+- Extended benchmark scenarios and result automation
+- Web UI enhancements for workload and benchmark controls
+- Zabbix integration improvements
 - Documentation improvements
 
 ## 🐛 Troubleshooting
@@ -610,7 +671,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🙏 Acknowledgments
 
 - [gosnmp](https://github.com/gosnmp/gosnmp) - SNMP library for Go
-- [go-radix](https://github.com/armon/go-radix) - Radix tree implementation
+- [robfig/cron](https://github.com/robfig/cron) - Cron scheduling for trap triggers
 - SNMP RFCs: [1905](https://tools.ietf.org/html/rfc1905), [1906](https://tools.ietf.org/html/rfc1906), [1907](https://tools.ietf.org/html/rfc1907)
 
 ## 📮 Contact

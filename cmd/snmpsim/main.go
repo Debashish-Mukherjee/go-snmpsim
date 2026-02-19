@@ -41,6 +41,7 @@ func main() {
 	routeFile := flag.String("route-file", "", "Path to routes.yaml for dataset routing")
 	variationFile := flag.String("variation-file", "", "Path to variations.yaml for OID variation chains")
 	listenAddr := flag.String("listen", "0.0.0.0", "Listen address")
+	listenAddr6 := flag.String("listen6", "", "Optional IPv6 listen address (e.g. :: or ::1)")
 	v3Enabled := flag.Bool("v3-enabled", true, "Enable SNMPv3 support")
 	engineID := flag.String("engine-id", "", "SNMPv3 authoritative engine ID (hex or plain text)")
 	v3User := flag.String("v3-user", "simuser", "SNMPv3 username")
@@ -114,6 +115,10 @@ func main() {
 	)
 	if err != nil {
 		log.Fatalf("Failed to create simulator: %v", err)
+	}
+	if strings.TrimSpace(*listenAddr6) != "" {
+		simulator.SetListenAddr6(*listenAddr6)
+		log.Printf("SNMP IPv6 listen enabled: %s", *listenAddr6)
 	}
 
 	if len(trapTargets) > 0 {
