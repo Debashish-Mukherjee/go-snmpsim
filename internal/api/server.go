@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -48,6 +49,7 @@ func NewServer(addr string) *Server {
 
 	// API endpoints
 	mux.HandleFunc("/api/status", s.handleStatus)
+	mux.HandleFunc("/metrics", s.handleMetrics)
 	mux.HandleFunc("/api/start", s.handleStart)
 	mux.HandleFunc("/api/stop", s.handleStop)
 	mux.HandleFunc("/api/test/snmp", s.handleSNMPTest)
@@ -127,10 +129,59 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.RLock()
 	status := *s.status
+	sim := s.simulator
 	s.mu.RUnlock()
+
+	if sim != nil {
+		if stats := sim.Statistics(); stats != nil {
+			if totalPolls, ok := stats["total_polls"].(int64); ok {
+				status.TotalPolls = totalPolls
+			}
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(status)
+}
+
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.mu.RLock()
+	sim := s.simulator
+	s.mu.RUnlock()
+
+	totalPolls := int64(0)
+	virtualAgents := 0
+	running := 0
+
+	if sim != nil {
+		if stats := sim.Statistics(); stats != nil {
+			if total, ok := stats["total_polls"].(int64); ok {
+				totalPolls = total
+			}
+			if count, ok := stats["virtual_agents"].(int); ok {
+				virtualAgents = count
+			}
+			if isRunning, ok := stats["running"].(bool); ok && isRunning {
+				running = 1
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+	fmt.Fprintln(w, "# HELP snmpsim_simulator_polls_total Total SNMP packets handled by simulator")
+	fmt.Fprintln(w, "# TYPE snmpsim_simulator_polls_total counter")
+	fmt.Fprintln(w, "snmpsim_simulator_polls_total "+strconv.FormatInt(totalPolls, 10))
+	fmt.Fprintln(w, "# HELP snmpsim_simulator_agents Number of active simulator virtual agents")
+	fmt.Fprintln(w, "# TYPE snmpsim_simulator_agents gauge")
+	fmt.Fprintln(w, "snmpsim_simulator_agents "+strconv.Itoa(virtualAgents))
+	fmt.Fprintln(w, "# HELP snmpsim_simulator_running Simulator running state (1 up, 0 down)")
+	fmt.Fprintln(w, "# TYPE snmpsim_simulator_running gauge")
+	fmt.Fprintln(w, "snmpsim_simulator_running "+strconv.Itoa(running))
 }
 
 // handleStart starts the simulator with given parameters

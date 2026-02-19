@@ -15,6 +15,7 @@ import (
 
 	"github.com/debashish-mukherjee/go-snmpsim/internal/engine"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/v3"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -23,7 +24,7 @@ func main() {
 	metricsAddr := flag.String("metrics-addr", "127.0.0.1:9090", "Prometheus metrics address")
 	flag.Parse()
 
-	// Initialize metrics
+	// Initialize metrics FIRST
 	initMetrics()
 
 	// Create resource manager
@@ -38,6 +39,7 @@ func main() {
 
 	// Health and metrics
 	mux.HandleFunc("/health", healthHandler)
+	mux.Handle("/metrics", promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{}))
 
 	// Start API server
 	apiServer := &http.Server{
@@ -163,11 +165,17 @@ func NewResourceManager() *ResourceManager {
 
 // Lab endpoints
 func (rm *ResourceManager) CreateLab(w http.ResponseWriter, r *http.Request) {
+	startTime := time.Now()
+	defer func() {
+		RecordLatency("POST", "labs", time.Since(startTime).Seconds())
+	}()
+
 	var req struct {
 		Name     string `json:"name"`
 		EngineID string `json:"engine_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		RecordFailure("invalid_lab_payload", "labs")
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -187,12 +195,21 @@ func (rm *ResourceManager) CreateLab(w http.ResponseWriter, r *http.Request) {
 	}
 	rm.labs[id] = lab
 
+	RecordLabCreated()
+	RecordPacket("POST", id)
+	UpdateActiveAgents(id, 0)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(lab)
 }
 
 func (rm *ResourceManager) ListLabs(w http.ResponseWriter, r *http.Request) {
+	startTime := time.Now()
+	defer func() {
+		RecordLatency("GET", "labs", time.Since(startTime).Seconds())
+	}()
+
 	rm.mu.RLock()
 	labs := make([]*Lab, 0, len(rm.labs))
 	for _, lab := range rm.labs {
@@ -200,21 +217,31 @@ func (rm *ResourceManager) ListLabs(w http.ResponseWriter, r *http.Request) {
 	}
 	rm.mu.RUnlock()
 
+	// Record metric for API activity
+	RecordPacket("GET", "labs")
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(labs)
 }
 
 func (rm *ResourceManager) GetLab(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	startTime := time.Now()
+	defer func() {
+		RecordLatency("GET", id, time.Since(startTime).Seconds())
+	}()
 
 	rm.mu.RLock()
 	lab, ok := rm.labs[id]
 	rm.mu.RUnlock()
 
 	if !ok {
+		RecordFailure("lab_not_found", id)
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
+
+	RecordPacket("GET", id)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(lab)
@@ -245,17 +272,23 @@ func (rm *ResourceManager) DeleteLab(w http.ResponseWriter, r *http.Request) {
 
 func (rm *ResourceManager) StartLab(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	startTime := time.Now()
+	defer func() {
+		RecordLatency("POST", id, time.Since(startTime).Seconds())
+	}()
 
 	rm.mu.Lock()
 	lab, ok := rm.labs[id]
 	if !ok {
 		rm.mu.Unlock()
+		RecordFailure("lab_not_found", id)
 		http.Error(w, "lab not found", http.StatusNotFound)
 		return
 	}
 
 	if lab.Status == "running" {
 		rm.mu.Unlock()
+		RecordFailure("lab_already_running", id)
 		http.Error(w, "lab already running", http.StatusConflict)
 		return
 	}
@@ -263,6 +296,7 @@ func (rm *ResourceManager) StartLab(w http.ResponseWriter, r *http.Request) {
 	eng, ok := rm.engines[lab.EngineID]
 	if !ok {
 		rm.mu.Unlock()
+		RecordFailure("engine_not_found", id)
 		http.Error(w, "engine not found", http.StatusBadRequest)
 		return
 	}
@@ -282,6 +316,7 @@ func (rm *ResourceManager) StartLab(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	if err := sim.Start(ctx); err != nil {
+		RecordFailure("simulator_start_failed", id)
 		http.Error(w, fmt.Sprintf("failed to start simulator: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -292,6 +327,8 @@ func (rm *ResourceManager) StartLab(w http.ResponseWriter, r *http.Request) {
 	rm.mu.Unlock()
 
 	RecordLabStart()
+	RecordPacket("START", id)
+	UpdateActiveAgents(id, eng.NumDevices)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(lab)
@@ -299,17 +336,23 @@ func (rm *ResourceManager) StartLab(w http.ResponseWriter, r *http.Request) {
 
 func (rm *ResourceManager) StopLab(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	startTime := time.Now()
+	defer func() {
+		RecordLatency("POST", id, time.Since(startTime).Seconds())
+	}()
 
 	rm.mu.Lock()
 	lab, ok := rm.labs[id]
 	if !ok {
 		rm.mu.Unlock()
+		RecordFailure("lab_not_found", id)
 		http.Error(w, "lab not found", http.StatusNotFound)
 		return
 	}
 
 	if lab.Status != "running" {
 		rm.mu.Unlock()
+		RecordFailure("lab_not_running", id)
 		http.Error(w, "lab not running", http.StatusConflict)
 		return
 	}
@@ -317,6 +360,7 @@ func (rm *ResourceManager) StopLab(w http.ResponseWriter, r *http.Request) {
 	sim, ok := rm.labSimulators[id]
 	if !ok {
 		rm.mu.Unlock()
+		RecordFailure("simulator_not_found", id)
 		http.Error(w, "simulator not found", http.StatusInternalServerError)
 		return
 	}
@@ -326,6 +370,10 @@ func (rm *ResourceManager) StopLab(w http.ResponseWriter, r *http.Request) {
 
 	lab.Status = "stopped"
 	rm.mu.Unlock()
+
+	RecordLabStop()
+	RecordPacket("STOP", id)
+	UpdateActiveAgents(id, 0)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(lab)

@@ -6,3 +6,8 @@ scrape_configs:
   - job_name: 'snmpsim-api'
     static_configs:
       - targets: ['api:9090']
+
+  - job_name: 'snmpsim-simulator'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['snmpsim:8080']

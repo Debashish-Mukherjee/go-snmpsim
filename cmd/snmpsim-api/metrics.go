@@ -1,6 +1,8 @@
 package main
 
 import (
+	"log"
+
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -57,17 +59,40 @@ var (
 )
 
 func initMetrics() {
-	prometheus.MustRegister(labsTotal)
-	prometheus.MustRegister(labsActive)
-	prometheus.MustRegister(packetsTotal)
-	prometheus.MustRegister(failuresTotal)
-	prometheus.MustRegister(latencyHistogram)
-	prometheus.MustRegister(agentsActive)
+	if err := prometheus.Register(labsTotal); err != nil {
+		log.Printf("labsTotal already registered: %v", err)
+	}
+	if err := prometheus.Register(labsActive); err != nil {
+		log.Printf("labsActive already registered: %v", err)
+	}
+	if err := prometheus.Register(packetsTotal); err != nil {
+		log.Printf("packetsTotal already registered: %v", err)
+	}
+	if err := prometheus.Register(failuresTotal); err != nil {
+		log.Printf("failuresTotal already registered: %v", err)
+	}
+	if err := prometheus.Register(latencyHistogram); err != nil {
+		log.Printf("latencyHistogram already registered: %v", err)
+	}
+	if err := prometheus.Register(agentsActive); err != nil {
+		log.Printf("agentsActive already registered: %v", err)
+	}
+
+	// Initialize baseline series so dashboards do not show empty panels.
+	labsTotal.WithLabelValues("created").Add(0)
+	labsActive.WithLabelValues().Set(0)
+	packetsTotal.WithLabelValues("GET", "labs").Add(0)
+	failuresTotal.WithLabelValues("none", "none").Add(0)
+	agentsActive.WithLabelValues("global").Set(0)
+}
+
+// Record metrics for a lab creation
+func RecordLabCreated() {
+	labsTotal.WithLabelValues("created").Inc()
 }
 
 // Record metrics for a lab start
 func RecordLabStart() {
-	labsTotal.WithLabelValues("started").Inc()
 	labsActive.WithLabelValues().Add(1)
 }
 

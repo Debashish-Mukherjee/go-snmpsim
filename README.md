@@ -8,7 +8,7 @@
 
 ## 📦 Release
 
-- **Current Release**: `v1.4`
+- **Current Release**: `v1.5`
 - **Release Date**: 2026-02-19
 - **Highlights**:
   - SNMPv2c + full SNMPv3 (noAuthNoPriv / authNoPriv / authPriv) support in simulator
@@ -18,7 +18,7 @@
   - End-to-end SNMPv3 polling verified with history collection
   - First 50 active hosts migrated to SNMPv3 (`cisco-iosxr-001` to `cisco-iosxr-050`)
 
-### Release Notes (v1.4)
+### Release Notes (v1.5)
 
 - Added `gosnmpsim-record` to learn live SNMP devices and export `.snmprec` using `OID|TYPE|VALUE`
 - Added `gosnmpsim-diff` to compare two recorded walks and report missing/value/type mismatches

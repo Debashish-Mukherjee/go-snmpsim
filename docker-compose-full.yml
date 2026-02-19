@@ -1,0 +1,165 @@
+version: '3.8'
+
+services:
+  # SNMP Simulator with SNMPv3 and 100 hosts
+  snmpsim:
+    image: golang:1.22-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+      - /app/go-build
+    command: sh -c "go build -o /tmp/snmpsim ./cmd/snmpsim/main.go && /tmp/snmpsim --listen=0.0.0.0 --port-start=10000 --port-end=10100 --devices=100 --snmprec=./sample.snmprec --v3-enabled --v3-user=simuser --v3-auth=SHA1 --v3-auth-key=authpass1234 --v3-priv=AES128 --v3-priv-key=privpass1234"
+    ports:
+      - "10000-10099:10000-10099/udp"
+    networks:
+      - snmpsim-net
+      - zabbix-network
+    container_name: snmpsim-simulator
+    environment:
+      - GOMAXPROCS=4
+
+  # REST API Service
+  api:
+    image: golang:1.22-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+      - /app/go-build
+    command: sh -c "go build -o /tmp/snmpsim-api ./cmd/snmpsim-api && /tmp/snmpsim-api --api-addr=0.0.0.0:8080 --metrics-addr=0.0.0.0:9090"
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    networks:
+      - snmpsim-net
+    container_name: snmpsim-api
+    depends_on:
+      - snmpsim
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-storage:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    networks:
+      - snmpsim-net
+    depends_on:
+      - api
+    container_name: snmpsim-prometheus
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - snmpsim-net
+    depends_on:
+      - prometheus
+    container_name: snmpsim-grafana
+
+  # PostgreSQL 15 Database for Zabbix
+  postgres:
+    image: postgres:15-alpine
+    container_name: zabbix-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: zabbix
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: zabbix_password_123!
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - zabbix_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zabbix"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - zabbix-network
+    command: postgres -c max_connections=200
+
+  # Zabbix Server
+  zabbix-server:
+    image: zabbix/zabbix-server-pgsql:latest
+    container_name: zabbix-server
+    restart: unless-stopped
+    ports:
+      - "10051:10051"
+    environment:
+      DB_SERVER_HOST: postgres
+      POSTGRES_DB: zabbix
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: zabbix_password_123!
+      ZBX_CACHESIZE: 512M
+      ZBX_TRENDCACHESIZE: 256M
+      ZBX_MAXHOUSEKEEPERDELETE: 10000
+      ZBX_PROBLEMINHIBITTIMEOUT: 300
+      ZBX_STARTPOLLERS: 32
+      ZBX_STARTSNMPPOLLERS: 16
+      ZBX_STARTPOLLERSUNREACHABLE: 8
+      ZBX_STARTDISCOVERERS: 4
+      ZBX_HOUSEKEEPERENABLEAUTOHOUSEKEEPING: 1
+      ZBX_HOUSEKEEPINGFREQUENCY: 1
+      ZBX_MAXHOUSEKEEPER_INTERVAL: 4h
+      ZBX_STARTPREPROCESSORS: 8
+      ZBX_STATSALLOWLOCALHOST: 0
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - zabbix_server_data:/var/lib/zabbix
+    networks:
+      - zabbix-network
+      - snmpsim-net
+
+  # Zabbix Web UI
+  zabbix-web:
+    image: zabbix/zabbix-web-nginx-pgsql:latest
+    container_name: zabbix-web
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+      - "8443:8443"
+    environment:
+      DB_SERVER_HOST: postgres
+      POSTGRES_DB: zabbix
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: zabbix_password_123!
+      ZBX_SERVER_HOST: zabbix-server
+      ZBX_SERVER_PORT: 10051
+      ZBX_SERVER_NAME: "SNMP Simulator Lab"
+      PHP_TZ: "UTC"
+    depends_on:
+      - zabbix-server
+    volumes:
+      - zabbix_web_data:/var/lib/zabbix/export
+    networks:
+      - zabbix-network
+
+volumes:
+  prometheus-storage:
+  grafana-storage:
+  zabbix_postgres_data:
+  zabbix_server_data:
+  zabbix_web_data:
+
+networks:
+  snmpsim-net:
+    driver: bridge
+  zabbix-network:
+    driver: bridge

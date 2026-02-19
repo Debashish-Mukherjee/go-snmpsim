@@ -1,6 +1,6 @@
 # Repository Documentation Index
 
-> **Release**: `v1.4` (2026-02-19) — includes SNMPv3 end-to-end support, dataset routing, variation plugins, 2000-device stress suite, walk recorder/diff CLIs, trap/inform emission with triggers, dual-stack listeners, and sharded-store benchmark harness.
+> **Release**: `v1.5` (2026-02-19) — includes SNMPv3 end-to-end support, dataset routing, variation plugins, trap/inform emission with triggers, dual-stack listeners, sharded-store benchmark harness, and the REST API + observability stack.
 
 ## Quick Start
 
@@ -216,4 +216,4 @@ go-snmpsim/
 ---
 
 Last Updated: February 19, 2026  
-Status: ✅ Release v1.4 - SNMPv2c + SNMPv3 + routing + variation + stress suite + record/diff + trap/inform + dual-stack + sharded benchmarks ready
+Status: ✅ Release v1.5 - SNMPv2c + SNMPv3 + routing + variation + stress suite + record/diff + trap/inform + dual-stack + sharded benchmarks + REST API + observability stack ready

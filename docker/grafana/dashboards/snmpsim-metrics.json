@@ -86,11 +86,11 @@
       "pluginVersion": "8.0.0",
       "targets": [
         {
-          "expr": "rate(snmpsim_packets_total[5m])",
+          "expr": "rate(snmpsim_simulator_polls_total[1m])",
           "refId": "A"
         }
       ],
-      "title": "SNMP Packets/sec",
+      "title": "SNMP Polls/sec",
       "type": "timeseries"
     },
     {
@@ -161,7 +161,7 @@
       "pluginVersion": "8.0.0",
       "targets": [
         {
-          "expr": "snmpsim_failures_total",
+          "expr": "sum(snmpsim_failures_total) or vector(0)",
           "refId": "A"
         }
       ],
@@ -236,7 +236,7 @@
       "pluginVersion": "8.0.0",
       "targets": [
         {
-          "expr": "snmpsim_latency_seconds_bucket",
+          "expr": "(sum(rate(snmpsim_latency_seconds_sum[5m])) / (sum(rate(snmpsim_latency_seconds_count[5m])) + 1e-9)) or vector(0)",
           "refId": "A"
         }
       ],
@@ -311,7 +311,7 @@
       "pluginVersion": "8.0.0",
       "targets": [
         {
-          "expr": "snmpsim_agents_active",
+          "expr": "snmpsim_simulator_agents",
           "refId": "A"
         }
       ],

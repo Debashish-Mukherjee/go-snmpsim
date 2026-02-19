@@ -366,10 +366,19 @@ func (s *Simulator) Statistics() map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	var totalPolls int64
+	for _, virtualAgent := range s.agents {
+		stats := virtualAgent.GetStatistics()
+		if count, ok := stats["poll_count"].(int64); ok {
+			totalPolls += count
+		}
+	}
+
 	return map[string]interface{}{
 		"running":          s.running.Load(),
 		"active_listeners": len(s.listeners),
 		"virtual_agents":   len(s.agents),
+		"total_polls":      totalPolls,
 		"port_start":       s.portStart,
 		"port_end":         s.portEnd,
 	}

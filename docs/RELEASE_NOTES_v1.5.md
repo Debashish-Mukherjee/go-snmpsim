@@ -1,6 +1,6 @@
 # v1.5 Release Notes: REST API & Observability Stack
 
-**Release Date:** January 2024  
+**Release Date:** February 19, 2026  
 **Commit:** d30cf6d  
 **Branch:** main
 
