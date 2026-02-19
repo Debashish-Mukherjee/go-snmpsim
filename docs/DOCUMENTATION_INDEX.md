@@ -1,6 +1,6 @@
 # Repository Documentation Index
 
-> **Release**: `v1.2` (2026-02-19) — includes SNMPv3 end-to-end support, dataset routing, variation plugins, and 2000-device stress suite.
+> **Release**: `v1.3` (2026-02-19) — includes SNMPv3 end-to-end support, dataset routing, variation plugins, 2000-device stress suite, walk recorder/diff CLIs, and trap/inform emission with triggers.
 
 ## Quick Start
 
@@ -216,4 +216,4 @@ go-snmpsim/
 ---
 
 Last Updated: February 19, 2026  
-Status: ✅ Release v1.2 - SNMPv2c + SNMPv3 + routing + variation + stress suite ready
+Status: ✅ Release v1.3 - SNMPv2c + SNMPv3 + routing + variation + stress suite + record/diff + trap/inform ready

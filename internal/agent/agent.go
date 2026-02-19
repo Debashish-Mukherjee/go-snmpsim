@@ -37,8 +37,25 @@ type VirtualAgent struct {
 	startTime     time.Time
 	lastPoll      time.Time
 	pollCount     atomic.Int64
+	variationHook func(VariationEvent)
+	setHook       func(SetEvent)
 
 	mu sync.RWMutex
+}
+
+type VariationEvent struct {
+	DeviceID int
+	Port     int
+	OID      string
+	Detail   string
+}
+
+type SetEvent struct {
+	DeviceID int
+	Port     int
+	OID      string
+	Type     string
+	Value    string
 }
 
 // NewVirtualAgent creates a new virtual SNMP agent
@@ -85,6 +102,18 @@ func (va *VirtualAgent) SetVariationBinder(binder *variation.Binder) {
 	va.mu.Lock()
 	defer va.mu.Unlock()
 	va.variations = binder
+}
+
+func (va *VirtualAgent) SetVariationEventHook(hook func(VariationEvent)) {
+	va.mu.Lock()
+	defer va.mu.Unlock()
+	va.variationHook = hook
+}
+
+func (va *VirtualAgent) SetSetEventHook(hook func(SetEvent)) {
+	va.mu.Lock()
+	defer va.mu.Unlock()
+	va.setHook = hook
 }
 
 // SetDeviceMapping assigns device-specific OID mappings to this agent
@@ -705,6 +734,10 @@ func (va *VirtualAgent) handleGetBulkRequest(req *gosnmp.SnmpPacket, oidDB *stor
 
 // handleSetRequest returns read-only error response
 func (va *VirtualAgent) handleSetRequest(req *gosnmp.SnmpPacket) []byte {
+	for _, variable := range req.Variables {
+		va.emitSetEvent(variable)
+	}
+
 	outPacket := va.buildResponseFromRequest(req, []gosnmp.SnmpPDU{}, 4, 1)
 
 	data, err := marshalPacket(outPacket)
@@ -719,13 +752,42 @@ func (va *VirtualAgent) handleSetRequest(req *gosnmp.SnmpPacket) []byte {
 func (va *VirtualAgent) applyVariations(now time.Time, pdu gosnmp.SnmpPDU) (gosnmp.SnmpPDU, error) {
 	va.mu.RLock()
 	binder := va.variations
+	hook := va.variationHook
 	va.mu.RUnlock()
 
 	if binder == nil {
 		return pdu, nil
 	}
 
-	return binder.Apply(now, pdu)
+	applied, err := binder.Apply(now, pdu)
+	if err != nil {
+		if hook != nil {
+			hook(VariationEvent{DeviceID: va.deviceID, Port: va.port, OID: pdu.Name, Detail: err.Error()})
+		}
+		return applied, err
+	}
+
+	if hook != nil && (applied.Type != pdu.Type || fmt.Sprint(applied.Value) != fmt.Sprint(pdu.Value)) {
+		hook(VariationEvent{DeviceID: va.deviceID, Port: va.port, OID: pdu.Name, Detail: "value-changed"})
+	}
+
+	return applied, nil
+}
+
+func (va *VirtualAgent) emitSetEvent(variable gosnmp.SnmpPDU) {
+	va.mu.RLock()
+	hook := va.setHook
+	va.mu.RUnlock()
+	if hook == nil {
+		return
+	}
+	hook(SetEvent{
+		DeviceID: va.deviceID,
+		Port:     va.port,
+		OID:      normalizeOID(variable.Name),
+		Type:     variable.Type.String(),
+		Value:    fmt.Sprint(variable.Value),
+	})
 }
 
 // getOIDValue retrieves the value for a specific OID

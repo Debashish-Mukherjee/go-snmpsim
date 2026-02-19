@@ -13,6 +13,7 @@ import (
 	"github.com/debashish-mukherjee/go-snmpsim/internal/agent"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/routing"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/store"
+	"github.com/debashish-mukherjee/go-snmpsim/internal/traps"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/v3"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/variation"
 	"golang.org/x/sys/unix"
@@ -32,6 +33,7 @@ type Simulator struct {
 	router        *routing.Router
 	datasetStore  *store.DatasetStore
 	variations    *variation.Binder
+	trapManager   *traps.Manager
 
 	// Listeners and dispatcher
 	listeners    map[int]*net.UDPConn        // port -> listener
@@ -163,7 +165,7 @@ func (s *Simulator) createVirtualAgents(oidDB *store.OIDDatabase) error {
 			boots = persistedBoots
 		}
 
-		agent := agent.NewVirtualAgent(
+		virtualAgent := agent.NewVirtualAgent(
 			deviceID,
 			port,
 			fmt.Sprintf("Device-%d", deviceID),
@@ -174,12 +176,20 @@ func (s *Simulator) createVirtualAgents(oidDB *store.OIDDatabase) error {
 
 		// Assign index manager for Zabbix LLD support
 		if s.indexManager != nil {
-			agent.SetIndexManager(s.indexManager)
+			virtualAgent.SetIndexManager(s.indexManager)
 		}
-		agent.SetRouting(s.router, s.datasetStore)
-		agent.SetVariationBinder(s.variations)
+		virtualAgent.SetRouting(s.router, s.datasetStore)
+		virtualAgent.SetVariationBinder(s.variations)
+		if s.trapManager != nil {
+			virtualAgent.SetVariationEventHook(func(ev agent.VariationEvent) {
+				s.trapManager.EnqueueVariationEvent(ev.DeviceID, ev.Port, ev.OID, ev.Detail)
+			})
+			virtualAgent.SetSetEventHook(func(ev agent.SetEvent) {
+				s.trapManager.EnqueueSetEvent(ev.DeviceID, ev.Port, ev.OID, ev.Type, ev.Value)
+			})
+		}
 
-		s.agents[port] = agent
+		s.agents[port] = virtualAgent
 		deviceID++
 
 		if deviceID >= s.numDevices {
@@ -193,6 +203,31 @@ func (s *Simulator) createVirtualAgents(oidDB *store.OIDDatabase) error {
 	return nil
 }
 
+func (s *Simulator) SetTrapConfig(cfg traps.Config) error {
+	manager, err := traps.NewManager(cfg)
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.trapManager = manager
+	for _, vAgent := range s.agents {
+		if manager == nil {
+			vAgent.SetVariationEventHook(nil)
+			vAgent.SetSetEventHook(nil)
+			continue
+		}
+		vAgent.SetVariationEventHook(func(ev agent.VariationEvent) {
+			manager.EnqueueVariationEvent(ev.DeviceID, ev.Port, ev.OID, ev.Detail)
+		})
+		vAgent.SetSetEventHook(func(ev agent.SetEvent) {
+			manager.EnqueueSetEvent(ev.DeviceID, ev.Port, ev.OID, ev.Type, ev.Value)
+		})
+	}
+	return nil
+}
+
 // Start initializes all UDP listeners and starts packet handling
 func (s *Simulator) Start(ctx context.Context) error {
 	if !s.running.CompareAndSwap(false, true) {
@@ -200,6 +235,9 @@ func (s *Simulator) Start(ctx context.Context) error {
 	}
 
 	s.mu.Lock()
+	if s.trapManager != nil {
+		s.trapManager.Start()
+	}
 
 	// Create UDP listeners with SO_REUSEADDR/SO_REUSEPORT
 	for port := range s.agents {
@@ -290,6 +328,9 @@ func (s *Simulator) Stop() {
 
 	s.cleanup()
 	s.wg.Wait()
+	if s.trapManager != nil {
+		s.trapManager.Stop()
+	}
 
 	log.Printf("All listeners stopped")
 }

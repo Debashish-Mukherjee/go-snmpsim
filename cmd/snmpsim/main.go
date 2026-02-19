@@ -11,9 +11,26 @@ import (
 
 	"github.com/debashish-mukherjee/go-snmpsim/internal/api"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/engine"
+	"github.com/debashish-mukherjee/go-snmpsim/internal/traps"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/v3"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/webui"
 )
+
+type stringSliceFlag []string
+
+func (f *stringSliceFlag) String() string {
+	return strings.Join(*f, ",")
+}
+
+func (f *stringSliceFlag) Set(value string) error {
+	for _, part := range strings.Split(value, ",") {
+		item := strings.TrimSpace(part)
+		if item != "" {
+			*f = append(*f, item)
+		}
+	}
+	return nil
+}
 
 func main() {
 	// Configuration flags
@@ -32,7 +49,18 @@ func main() {
 	v3AuthKey := flag.String("v3-auth-key", "", "SNMPv3 auth passphrase")
 	v3Priv := flag.String("v3-priv", "", "SNMPv3 priv protocol: DES,3DES,AES128,AES192,AES256")
 	v3PrivKey := flag.String("v3-priv-key", "", "SNMPv3 privacy passphrase")
+	trapVersion := flag.String("trap-version", "v2c", "Trap/Inform version: v2c|v3")
+	trapCommunity := flag.String("trap-community", "public", "Trap community for v2c notifications")
+	trapOnVariation := flag.Bool("trap-on-variation", false, "Emit traps on variation events")
+	trapInform := flag.Bool("trap-inform", false, "Emit informs instead of traps")
 	webPort := flag.String("web-port", "8080", "Port for web UI API server")
+
+	var trapTargets stringSliceFlag
+	var trapCronSpecs stringSliceFlag
+	var trapSetOIDs stringSliceFlag
+	flag.Var(&trapTargets, "trap-target", "Trap target host:port (repeatable)")
+	flag.Var(&trapCronSpecs, "trap-cron", "Cron spec for periodic trap emission (repeatable)")
+	flag.Var(&trapSetOIDs, "trap-on-set-oid", "Emit trap on SET to OID (repeatable)")
 	flag.Parse()
 
 	// Check file descriptors
@@ -86,6 +114,27 @@ func main() {
 	)
 	if err != nil {
 		log.Fatalf("Failed to create simulator: %v", err)
+	}
+
+	if len(trapTargets) > 0 {
+		trapConfig := traps.Config{
+			Targets:     trapTargets,
+			Version:     *trapVersion,
+			Community:   *trapCommunity,
+			V3User:      *v3User,
+			V3Auth:      *v3Auth,
+			V3AuthKey:   *v3AuthKey,
+			V3Priv:      *v3Priv,
+			V3PrivKey:   *v3PrivKey,
+			CronSpecs:   trapCronSpecs,
+			OnVariation: *trapOnVariation,
+			OnSetOIDs:   trapSetOIDs,
+			Inform:      *trapInform,
+		}
+		if err := simulator.SetTrapConfig(trapConfig); err != nil {
+			log.Fatalf("Invalid trap config: %v", err)
+		}
+		log.Printf("Trap emission enabled: targets=%d version=%s", len(trapTargets), *trapVersion)
 	}
 
 	// Create context for graceful shutdown

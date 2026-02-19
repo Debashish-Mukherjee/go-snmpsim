@@ -8,7 +8,7 @@
 
 ## 📦 Release
 
-- **Current Release**: `v1.2`
+- **Current Release**: `v1.3`
 - **Release Date**: 2026-02-19
 - **Highlights**:
   - SNMPv2c + full SNMPv3 (noAuthNoPriv / authNoPriv / authPriv) support in simulator
@@ -17,6 +17,18 @@
   - Zabbix host provisioning updated for SNMPv3 interfaces
   - End-to-end SNMPv3 polling verified with history collection
   - First 50 active hosts migrated to SNMPv3 (`cisco-iosxr-001` to `cisco-iosxr-050`)
+
+### Release Notes (v1.3)
+
+- Added `gosnmpsim-record` to learn live SNMP devices and export `.snmprec` using `OID|TYPE|VALUE`
+- Added `gosnmpsim-diff` to compare two recorded walks and report missing/value/type mismatches
+- Recorder supports default enterprise roots, exclusions, max OID cap, and rate-limited collection
+- Recorder supports both v2c (`--community`) and v3 (`--v3-*`) authentication modes
+- Added integration test flow: record mock agent → replay with go-snmpsim → diff identical
+- Added trap/inform emission with multi-target support (`--trap-target`, repeatable)
+- Added trap builders for SNMPv2c and SNMPv3 (`--trap-version v2c|v3` + existing `--v3-*` auth/priv flags)
+- Added trigger support for cron specs, variation events, and SET attempts on selected OIDs
+- Added integration tests with `snmptrapd` validating trap varbinds and v3 auth-user acceptance
 
 ## ✨ Features
 
@@ -235,6 +247,38 @@ Default walk roots are:
 ```bash
 go run ./cmd/gosnmpsim-diff --left before.snmprec --right after.snmprec
 ```
+
+### Trap/Inform Emission
+
+Enable SNMPv2c traps to one or more targets:
+
+```bash
+./snmpsim \
+      -port-start=20000 -port-end=20010 -devices=10 \
+      --trap-target 127.0.0.1:9162 \
+      --trap-target 127.0.0.1:9163 \
+      --trap-version v2c --trap-community public
+```
+
+Enable SNMPv3 informs with event triggers:
+
+```bash
+./snmpsim \
+      -port-start=20000 -port-end=20010 -devices=10 \
+      --trap-target 127.0.0.1:9162 \
+      --trap-version v3 \
+      --v3-user simuser --v3-auth SHA --v3-auth-key authpass123 \
+      --v3-priv AES128 --v3-priv-key privpass123 \
+      --trap-inform \
+      --trap-cron "*/5 * * * *" \
+      --trap-on-variation \
+      --trap-on-set-oid 1.3.6.1.2.1.1.5.0
+```
+
+Trigger behavior:
+- `--trap-cron`: emits periodic notification events based on cron spec
+- `--trap-on-variation`: emits when variation engine changes or drops/times out an OID
+- `--trap-on-set-oid`: emits on SET attempts to matching OIDs
 
 ### 2000-Device Stress Suite (Cisco IOS-style)
 
