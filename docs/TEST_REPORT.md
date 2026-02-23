@@ -604,3 +604,53 @@ item = {
 **Test Date**: February 17, 2026
 **Test Duration**: ~2 hours (ongoing)
 **Test Status**: ✅ SUCCESSFUL (with in-progress items marked)
+
+## Addendum: 250-Host NVPS Verification (February 23, 2026)
+
+### Objective
+
+Validate Zabbix collection throughput near 2000 NVPS with mixed Cisco IOS XR host templates and 5-minute polling.
+
+### Test Configuration
+
+| Parameter | Value |
+|----------|-------|
+| Host scope | `pilot-iosxr-*` |
+| Total hosts | 250 |
+| Host mix | 240 hosts x 2,000 items; 10 hosts x 12,000 items |
+| Total active items | 600,000 |
+| Polling interval | 5 minutes |
+| Observation window | 10 minutes |
+| Raw sample file | `/tmp/pilot_verify_250_10m.csv` |
+
+### Throughput Results
+
+| Metric | Value |
+|-------|-------|
+| Average NVPS | 1,979.61 |
+| Minimum 1-minute NVPS | 1,327.57 |
+| Maximum 1-minute NVPS | 2,655.74 |
+
+### Functional Integrity Checks
+
+| Check | Result |
+|------|--------|
+| Hosts with data in 10-minute window | 250/250 |
+| Hosts with full item coverage | 250/250 |
+| Items with data in 10-minute window | 600,000/600,000 |
+| Unsupported items (pilot scope) | 0 |
+| Runtime item errors (pilot scope) | 0 |
+
+### Zabbix Internal Health Snapshot (End of Run)
+
+| Internal Item | Value |
+|--------------|-------|
+| `zabbix[queue]` | 198 |
+| `zabbix[queue,10m]` | 0 |
+| `zabbix[process,poller,avg,busy]` | 3.55% |
+| `zabbix[process,history syncer,avg,busy]` | 1.68% |
+| `zabbix[process,preprocessing manager,avg,busy]` | 0.55% |
+
+### Outcome
+
+The environment meets the 2000 NVPS objective on average, with minute-level burst variation but no data loss and no runtime collection errors during the verification window.
