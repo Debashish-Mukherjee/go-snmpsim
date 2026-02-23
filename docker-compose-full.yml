@@ -1,16 +1,16 @@
 version: '3.8'
 
 services:
-  # SNMP Simulator with SNMPv3 and 100 hosts
+  # SNMP Simulator with SNMPv3 and 125 hosts
   snmpsim:
     image: golang:1.22-alpine
     working_dir: /app
     volumes:
       - .:/app
       - /app/go-build
-    command: sh -c "go build -o /tmp/snmpsim ./cmd/snmpsim/main.go && /tmp/snmpsim --listen=0.0.0.0 --port-start=10000 --port-end=10100 --devices=100 --snmprec=./sample.snmprec --v3-enabled --v3-user=simuser --v3-auth=SHA1 --v3-auth-key=authpass1234 --v3-priv=AES128 --v3-priv-key=privpass1234"
+    command: sh -c "go build -o /tmp/snmpsim ./cmd/snmpsim/main.go && /tmp/snmpsim --listen=0.0.0.0 --port-start=10000 --port-end=10125 --devices=125 --snmprec=./sample.snmprec --v3-enabled --v3-user=simuser --v3-auth=SHA1 --v3-auth-key=authpass1234 --v3-priv=AES128 --v3-priv-key=privpass1234"
     ports:
-      - "10000-10099:10000-10099/udp"
+      - "10000-10124:10000-10124/udp"
     networks:
       - snmpsim-net
       - zabbix-network

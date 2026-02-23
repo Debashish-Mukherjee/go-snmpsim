@@ -1,0 +1,527 @@
+{
+  "test_info": {
+    "name": "Zabbix 7.4 + Cisco IOS XR SNMPSIM Integration",
+    "description": "Simulate 20 Cisco IOS XR devices with 1750 metrics each using SNMP",
+    "start_time": "2026-02-23T17:05:05.628843",
+    "end_time": "2026-02-23T17:15:57.772330"
+  },
+  "results": {
+    "start_time": "2026-02-23T17:05:05.628843",
+    "status": "completed",
+    "devices_added": 100,
+    "items_created": 0,
+    "items_with_data": 0,
+    "errors": [
+      "Data collection did not start"
+    ],
+    "success_rate": 0.0,
+    "end_time": "2026-02-23T17:15:57.772330"
+  },
+  "metrics": {
+    "total_items": 0,
+    "items_with_data": 0,
+    "devices_with_data": 0,
+    "devices": {
+      "cisco-iosxr-001": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-002": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-003": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-004": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-005": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-006": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-007": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-008": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-009": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-010": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-011": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-012": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-013": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-014": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-015": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-016": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-017": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-018": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-019": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-020": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-021": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-022": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-023": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-024": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-025": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-026": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-027": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-028": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-029": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-030": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-031": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-032": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-033": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-034": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-035": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-036": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-037": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-038": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-039": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-040": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-041": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-042": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-043": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-044": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-045": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-046": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-047": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-048": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-049": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-050": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-051": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-052": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-053": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-054": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-055": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-056": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-057": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-058": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-059": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-060": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-061": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-062": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-063": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-064": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-065": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-066": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-067": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-068": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-069": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-070": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-071": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-072": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-073": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-074": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-075": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-076": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-077": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-078": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-079": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-080": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-081": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-082": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-083": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-084": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-085": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-086": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-087": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-088": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-089": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-090": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-091": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-092": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-093": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-094": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-095": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-096": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-097": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-098": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-099": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      },
+      "cisco-iosxr-100": {
+        "total_items": 0,
+        "items_with_data": 0,
+        "success_rate": 0
+      }
+    }
+  }
+}

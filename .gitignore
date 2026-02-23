@@ -39,3 +39,10 @@ vendor/
 tmp/
 temp/
 old/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Local SNMPREC backups
+*.snmprec.pre_*_backup
