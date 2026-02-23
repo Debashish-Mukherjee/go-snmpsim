@@ -104,6 +104,7 @@ type ResourceManager struct {
 	datasets  map[string]*Dataset
 
 	labSimulators map[string]*engine.Simulator // labID -> running simulator
+	labCancels    map[string]context.CancelFunc
 	nextID        int
 }
 
@@ -117,37 +118,37 @@ type Lab struct {
 }
 
 type Engine struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	EngineID   string `json:"engine_id"`   // SNMPv3 engine ID (hex)
-	ListenAddr string `json:"listen_addr"` // IPv4 address
-	ListenAddr6 string `json:"listen_addr6"` // IPv6 address (optional)
-	PortStart  int    `json:"port_start"`
-	PortEnd    int    `json:"port_end"`
-	NumDevices int    `json:"num_devices"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	EngineID    string    `json:"engine_id"`    // SNMPv3 engine ID (hex)
+	ListenAddr  string    `json:"listen_addr"`  // IPv4 address
+	ListenAddr6 string    `json:"listen_addr6"` // IPv6 address (optional)
+	PortStart   int       `json:"port_start"`
+	PortEnd     int       `json:"port_end"`
+	NumDevices  int       `json:"num_devices"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 type Endpoint struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Address  string `json:"address"` // IP address
-	Port     int    `json:"port"`
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Address   string    `json:"address"` // IP address
+	Port      int       `json:"port"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 type User struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Email    string `json:"email"`
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Email     string    `json:"email"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 type Dataset struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	EngineID string `json:"engine_id"`
-	FilePath string `json:"file_path"` // path to SNMP record file
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	EngineID  string    `json:"engine_id"`
+	FilePath  string    `json:"file_path"` // path to SNMP record file
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -160,6 +161,7 @@ func NewResourceManager() *ResourceManager {
 		users:         make(map[string]*User),
 		datasets:      make(map[string]*Dataset),
 		labSimulators: make(map[string]*engine.Simulator),
+		labCancels:    make(map[string]context.CancelFunc),
 	}
 }
 
@@ -312,10 +314,10 @@ func (rm *ResourceManager) StartLab(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx, cancel := context.WithCancel(context.Background())
 
 	if err := sim.Start(ctx); err != nil {
+		cancel()
 		RecordFailure("simulator_start_failed", id)
 		http.Error(w, fmt.Sprintf("failed to start simulator: %v", err), http.StatusInternalServerError)
 		return
@@ -324,6 +326,7 @@ func (rm *ResourceManager) StartLab(w http.ResponseWriter, r *http.Request) {
 	rm.mu.Lock()
 	lab.Status = "running"
 	rm.labSimulators[id] = sim
+	rm.labCancels[id] = cancel
 	rm.mu.Unlock()
 
 	RecordLabStart()
@@ -365,7 +368,14 @@ func (rm *ResourceManager) StopLab(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sim.Stop()
+	cancel := rm.labCancels[id]
+	delete(rm.labCancels, id)
+	if cancel != nil {
+		cancel()
+	}
+	if sim != nil {
+		sim.Stop()
+	}
 	delete(rm.labSimulators, id)
 
 	lab.Status = "stopped"
@@ -699,11 +709,18 @@ func (rm *ResourceManager) Shutdown() {
 	defer rm.mu.Unlock()
 
 	for labID, sim := range rm.labSimulators {
-		sim.Stop()
+		if cancel := rm.labCancels[labID]; cancel != nil {
+			cancel()
+		}
+		if sim != nil {
+			sim.Stop()
+		}
 		if lab, ok := rm.labs[labID]; ok {
 			lab.Status = "stopped"
 		}
 	}
+	rm.labSimulators = make(map[string]*engine.Simulator)
+	rm.labCancels = make(map[string]context.CancelFunc)
 }
 
 // Router registers HTTP handlers with proper method routing

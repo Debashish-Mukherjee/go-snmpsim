@@ -1,7 +1,6 @@
 package store
 
 import (
-	"hash/fnv"
 	"log"
 	"sort"
 	"sync"
@@ -57,18 +56,31 @@ func (odb *OIDDatabase) Insert(oid string, value *OIDValue) {
 
 // BatchInsert adds multiple OIDs efficiently and sorts once at the end
 func (odb *OIDDatabase) BatchInsert(entries map[string]*OIDValue) {
-	for oid, value := range entries {
-		shard := odb.shardFor(oid)
-		shard.mu.Lock()
-		shard.values[oid] = value
-		shard.mu.Unlock()
+	type shardEntry struct {
+		oid   string
+		value *OIDValue
+	}
 
-		odb.mu.Lock()
-		odb.sortedOIDs = append(odb.sortedOIDs, oid)
-		odb.mu.Unlock()
+	shardBuckets := make(map[int][]shardEntry, len(odb.shards))
+	oids := make([]string, 0, len(entries))
+
+	for oid, value := range entries {
+		idx := odb.shardIndexFor(oid)
+		shardBuckets[idx] = append(shardBuckets[idx], shardEntry{oid: oid, value: value})
+		oids = append(oids, oid)
+	}
+
+	for idx, bucket := range shardBuckets {
+		shard := &odb.shards[idx]
+		shard.mu.Lock()
+		for _, entry := range bucket {
+			shard.values[entry.oid] = entry.value
+		}
+		shard.mu.Unlock()
 	}
 
 	odb.mu.Lock()
+	odb.sortedOIDs = append(odb.sortedOIDs, oids...)
 	// Sort once after all inserts
 	quickSortOIDs(odb.sortedOIDs, 0, len(odb.sortedOIDs)-1)
 	odb.mu.Unlock()
@@ -143,9 +155,24 @@ func (odb *OIDDatabase) GetAll() map[string]*OIDValue {
 }
 
 func (odb *OIDDatabase) shardFor(oid string) *oidShard {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(oid))
-	return &odb.shards[int(h.Sum32())%len(odb.shards)]
+	return &odb.shards[odb.shardIndexFor(oid)]
+}
+
+func (odb *OIDDatabase) shardIndexFor(oid string) int {
+	return int(fnv32a(oid) % uint32(len(odb.shards)))
+}
+
+// fnv32a computes FNV-1a without heap allocations.
+func fnv32a(s string) uint32 {
+	const offset32 = 2166136261
+	const prime32 = 16777619
+
+	h := uint32(offset32)
+	for i := 0; i < len(s); i++ {
+		h ^= uint32(s[i])
+		h *= prime32
+	}
+	return h
 }
 
 // SortOIDs sorts all OIDs for efficient traversal and removes duplicates

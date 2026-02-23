@@ -24,6 +24,21 @@ snmpget -v 2c -c public -t 1 localhost:20000 1.3.6.1.2.1.1.5.0
 # SNMPv2-MIB::sysName.0 = STRING "Device-0"
 ```
 
+## Regression Test Suite
+
+Run focused regression tests for the recent correctness and stability fixes:
+
+```bash
+GOCACHE=/tmp/go-build go test ./internal/store -run 'TestOIDIndexManager' -count=1
+GOCACHE=/tmp/go-build go test ./internal/agent -run 'TestHandlePacketUpdatesPollStatsConcurrently' -count=1
+GOCACHE=/tmp/go-build go test ./internal/api -run 'TestHandleSNMPTestWithoutTester|TestHandleWorkloadsWithoutManager|TestHandleStartStopLifecycle' -count=1
+GOCACHE=/tmp/go-build go test ./cmd/snmpsim-api -run 'TestShutdownCancelsAndCleansLabState' -count=1
+```
+
+Expected result for each command:
+
+- `ok   github.com/debashish-mukherjee/go-snmpsim/<package>`
+
 ### Walk Operation Test
 
 ```bash

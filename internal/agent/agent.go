@@ -35,8 +35,8 @@ type VirtualAgent struct {
 	deviceOverlay map[string]interface{}  // Device-specific value overrides
 	uptime        uint32
 	startTime     time.Time
-	lastPoll      time.Time
 	pollCount     atomic.Int64
+	lastPollNanos atomic.Int64
 	variationHook func(VariationEvent)
 	setHook       func(SetEvent)
 
@@ -67,7 +67,8 @@ func NewVirtualAgent(deviceID int, port int, sysName string, oidDB *store.OIDDat
 		v3Config.EngineID = v3.GenerateEngineID(fmt.Sprintf("device-%d", deviceID))
 	}
 
-	return &VirtualAgent{
+	now := time.Now()
+	va := &VirtualAgent{
 		deviceID:      deviceID,
 		port:          port,
 		sysName:       sysName,
@@ -77,9 +78,10 @@ func NewVirtualAgent(deviceID int, port int, sysName string, oidDB *store.OIDDat
 		indexManager:  nil,
 		deviceMapping: nil,
 		deviceOverlay: make(map[string]interface{}),
-		startTime:     time.Now(),
-		lastPoll:      time.Now(),
+		startTime:     now,
 	}
+	va.lastPollNanos.Store(now.UnixNano())
+	return va
 }
 
 // SetIndexManager assigns the index manager for Zabbix LLD support
@@ -131,7 +133,7 @@ func (va *VirtualAgent) HandlePacket(packet []byte) []byte {
 // HandlePacketFrom processes a packet including endpoint metadata used by dataset routing.
 func (va *VirtualAgent) HandlePacketFrom(packet []byte, remoteAddr *net.UDPAddr, dstPort int) []byte {
 	count := va.pollCount.Add(1)
-	va.lastPoll = time.Now()
+	va.lastPollNanos.Store(time.Now().UnixNano())
 
 	// Log packet reception (sample every 1000th for high-volume scenarios)
 	if count%1000 == 0 {
@@ -916,12 +918,13 @@ func (va *VirtualAgent) GetStatistics() map[string]interface{} {
 	defer va.mu.RUnlock()
 
 	uptime := uint32(time.Since(va.startTime).Seconds())
+	lastPoll := time.Unix(0, va.lastPollNanos.Load()).Format(time.RFC3339)
 	return map[string]interface{}{
 		"device_id":  va.deviceID,
 		"port":       va.port,
 		"sysName":    va.sysName,
 		"uptime":     uptime,
 		"poll_count": va.pollCount.Load(),
-		"last_poll":  va.lastPoll.Format(time.RFC3339),
+		"last_poll":  lastPoll,
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/debashish-mukherjee/go-snmpsim/internal/engine"
+	"github.com/debashish-mukherjee/go-snmpsim/internal/v3"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/webui"
 )
 
@@ -20,6 +21,7 @@ type Server struct {
 	workloadManager *webui.WorkloadManager
 	snmpTester      *webui.SNMPTester
 	httpServer      *http.Server
+	simCancel       context.CancelFunc
 	mu              sync.RWMutex
 	status          *SimulatorStatus
 }
@@ -76,9 +78,7 @@ func (s *Server) SetSimulator(sim *engine.Simulator) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.simulator = sim
-	if sim != nil {
-		s.status.IsRunning = true
-	}
+	s.status.IsRunning = sim != nil
 }
 
 // SetSimulatorStatus sets the simulator status details
@@ -210,14 +210,50 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 	if req.Devices == 0 {
 		req.Devices = 10
 	}
+	if req.PortEnd <= req.PortStart {
+		http.Error(w, "port_end must be greater than port_start", http.StatusBadRequest)
+		return
+	}
 
-	// Create simulator (simplified - in real code, integrate with engine.Simulator)
 	s.mu.Lock()
+	if s.simulator != nil {
+		s.mu.Unlock()
+		http.Error(w, "simulator already running", http.StatusConflict)
+		return
+	}
+
+	sim, err := engine.NewSimulator(
+		req.ListenAddr,
+		req.PortStart,
+		req.PortEnd,
+		req.Devices,
+		req.SNMPrecFile,
+		"",
+		"",
+		v3.Config{},
+	)
+	if err != nil {
+		s.mu.Unlock()
+		http.Error(w, fmt.Sprintf("failed to create simulator: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := sim.Start(ctx); err != nil {
+		cancel()
+		s.mu.Unlock()
+		http.Error(w, fmt.Sprintf("failed to start simulator: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	s.simCancel = cancel
+	s.simulator = sim
 	s.status.IsRunning = true
 	s.status.TotalDevices = req.Devices
 	s.status.PortStart = req.PortStart
 	s.status.PortEnd = req.PortEnd
 	s.status.ListenAddr = req.ListenAddr
+	s.status.StartTime = time.Now().Format(time.RFC3339)
 	s.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
@@ -235,8 +271,19 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.mu.Lock()
+	sim := s.simulator
+	cancel := s.simCancel
+	s.simulator = nil
+	s.simCancel = nil
 	s.status.IsRunning = false
 	s.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	if sim != nil {
+		sim.Stop()
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
@@ -278,8 +325,16 @@ func (s *Server) handleSNMPTest(w http.ResponseWriter, r *http.Request) {
 		req.Timeout = 5
 	}
 
+	s.mu.RLock()
+	tester := s.snmpTester
+	s.mu.RUnlock()
+	if tester == nil {
+		http.Error(w, "SNMP tester not configured", http.StatusServiceUnavailable)
+		return
+	}
+
 	// Run tests
-	results := s.snmpTester.RunTests(&req)
+	results := tester.RunTests(&req)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(results)
@@ -292,7 +347,15 @@ func (s *Server) handleWorkloads(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	workloads := s.workloadManager.ListWorkloads()
+	s.mu.RLock()
+	wm := s.workloadManager
+	s.mu.RUnlock()
+	if wm == nil {
+		http.Error(w, "workload manager not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	workloads := wm.ListWorkloads()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(workloads)
 }
@@ -304,13 +367,21 @@ func (s *Server) handleSaveWorkload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.mu.RLock()
+	wm := s.workloadManager
+	s.mu.RUnlock()
+	if wm == nil {
+		http.Error(w, "workload manager not configured", http.StatusServiceUnavailable)
+		return
+	}
+
 	var workload webui.Workload
 	if err := json.NewDecoder(r.Body).Decode(&workload); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
 		return
 	}
 
-	if err := s.workloadManager.SaveWorkload(&workload); err != nil {
+	if err := wm.SaveWorkload(&workload); err != nil {
 		http.Error(w, fmt.Sprintf("Error saving workload: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -326,13 +397,21 @@ func (s *Server) handleLoadWorkload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.mu.RLock()
+	wm := s.workloadManager
+	s.mu.RUnlock()
+	if wm == nil {
+		http.Error(w, "workload manager not configured", http.StatusServiceUnavailable)
+		return
+	}
+
 	name := r.URL.Query().Get("name")
 	if name == "" {
 		http.Error(w, "Workload name required", http.StatusBadRequest)
 		return
 	}
 
-	workload, err := s.workloadManager.LoadWorkload(name)
+	workload, err := wm.LoadWorkload(name)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error loading workload: %v", err), http.StatusNotFound)
 		return
@@ -349,13 +428,21 @@ func (s *Server) handleDeleteWorkload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.mu.RLock()
+	wm := s.workloadManager
+	s.mu.RUnlock()
+	if wm == nil {
+		http.Error(w, "workload manager not configured", http.StatusServiceUnavailable)
+		return
+	}
+
 	name := r.URL.Query().Get("name")
 	if name == "" {
 		http.Error(w, "Workload name required", http.StatusBadRequest)
 		return
 	}
 
-	if err := s.workloadManager.DeleteWorkload(name); err != nil {
+	if err := wm.DeleteWorkload(name); err != nil {
 		http.Error(w, fmt.Sprintf("Error deleting workload: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -371,7 +458,15 @@ func (s *Server) handleTestResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := s.snmpTester.GetLastResults()
+	s.mu.RLock()
+	tester := s.snmpTester
+	s.mu.RUnlock()
+	if tester == nil {
+		http.Error(w, "SNMP tester not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	results := tester.GetLastResults()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(results)
 }

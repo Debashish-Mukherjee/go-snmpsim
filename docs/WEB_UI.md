@@ -151,14 +151,21 @@ Located in `internal/api/` and `internal/webui/`:
 REST endpoints:
 
 - `GET /api/status` - Current simulator metrics
-- `POST /api/start` - Start simulator with parameters
-- `POST /api/stop` - Stop simulator
+- `POST /api/start` - Create and start a simulator instance with the provided parameters
+- `POST /api/stop` - Stop the active simulator instance and release listeners/resources
 - `POST /api/test/snmp` - Execute SNMP tests
 - `GET /api/workloads` - List saved workloads
 - `POST /api/workloads/save` - Save workload configuration
 - `GET /api/workloads/load` - Load workload by name
 - `DELETE /api/workloads/delete` - Delete workload
 - `GET /api/test/results` - Retrieve last test results
+
+Behavior and error handling:
+
+- Starting while a simulator is already running returns `409 Conflict`
+- Invalid port ranges (for example, `port_end <= port_start`) return `400 Bad Request`
+- SNMP test endpoints return `503 Service Unavailable` if SNMP tester is not configured
+- Workload endpoints return `503 Service Unavailable` if workload manager is not configured
 
 #### SNMP Tester (`internal/webui/snmp_tester.go`)
 

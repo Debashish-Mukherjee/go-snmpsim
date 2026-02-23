@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"sort"
-	"strings"
 	"sync"
 )
 
@@ -80,10 +79,21 @@ func (im *OIDIndexManager) BuildIndex(db *OIDDatabase) error {
 
 	// Combine: sorted non-table OIDs + table entries
 	im.sortedOIDs = nonTableOIDs
-	sort.Strings(im.sortedOIDs)
+	sort.Slice(im.sortedOIDs, func(i, j int) bool {
+		return isOIDLess(im.sortedOIDs[i], im.sortedOIDs[j])
+	})
 
-	// Add table entries in proper order
-	for _, table := range im.tables {
+	// Add table entries in deterministic OID order.
+	tableEntryOIDs := make([]string, 0, len(im.tables))
+	for entryOID := range im.tables {
+		tableEntryOIDs = append(tableEntryOIDs, entryOID)
+	}
+	sort.Slice(tableEntryOIDs, func(i, j int) bool {
+		return isOIDLess(tableEntryOIDs[i], tableEntryOIDs[j])
+	})
+
+	for _, entryOID := range tableEntryOIDs {
+		table := im.tables[entryOID]
 		tableOIDs := im.buildTableOIDList(table)
 		im.sortedOIDs = append(im.sortedOIDs, tableOIDs...)
 	}
@@ -121,7 +131,7 @@ func (im *OIDIndexManager) GetNext(oid string, db *OIDDatabase) (string, *OIDVal
 	}
 
 	// Binary search for position
-	idx := sort.SearchStrings(im.sortedOIDs, oid)
+	idx := searchOIDPosition(im.sortedOIDs, oid)
 
 	// If exact match, return next
 	if idx < len(im.sortedOIDs) && im.sortedOIDs[idx] == oid {
@@ -173,7 +183,7 @@ func (im *OIDIndexManager) GetNextBulk(oid string, maxRepeaters int, db *OIDData
 	}
 
 	// Binary search for starting position
-	idx := sort.SearchStrings(im.sortedOIDs, oid)
+	idx := searchOIDPosition(im.sortedOIDs, oid)
 	if idx < len(im.sortedOIDs) && im.sortedOIDs[idx] == oid {
 		idx++
 	}
@@ -218,7 +228,7 @@ func (im *OIDIndexManager) getNextTableOID(oid string, db *OIDDatabase) (string,
 			return im.getOIDAfterTable(entryKey, db)
 		}
 		// Not a valid table OID, return next non-table OID
-		idx := sort.SearchStrings(im.sortedOIDs, oid)
+		idx := searchOIDPosition(im.sortedOIDs, oid)
 		if idx < len(im.sortedOIDs) && im.sortedOIDs[idx] == oid {
 			idx++
 		}
@@ -336,7 +346,7 @@ func (im *OIDIndexManager) getNextBulkTable(baseOID string, maxRepeaters int, db
 func (im *OIDIndexManager) getNextBulkRegular(baseOID string, maxRepeaters int, db *OIDDatabase) []*getNextBulkResult {
 	results := make([]*getNextBulkResult, 0, maxRepeaters)
 
-	idx := sort.SearchStrings(im.sortedOIDs, baseOID)
+	idx := searchOIDPosition(im.sortedOIDs, baseOID)
 	if idx < len(im.sortedOIDs) && im.sortedOIDs[idx] == baseOID {
 		idx++
 	}
@@ -368,7 +378,7 @@ func (im *OIDIndexManager) getOIDAfterTable(entryOID string, db *OIDDatabase) (s
 	lastTableOID := im.lastTableOID(table)
 
 	// Find next OID after table
-	idx := sort.SearchStrings(im.sortedOIDs, lastTableOID)
+	idx := searchOIDPosition(im.sortedOIDs, lastTableOID)
 	if idx < len(im.sortedOIDs) && im.sortedOIDs[idx] == lastTableOID {
 		idx++
 	}
@@ -384,15 +394,24 @@ func (im *OIDIndexManager) getOIDAfterTable(entryOID string, db *OIDDatabase) (s
 
 // isTableOID checks if an OID references a table component
 func (im *OIDIndexManager) isTableOID(oid string) bool {
-	// Quick check against cached table OIDs
-	parts := strings.Split(oid, ".")
-	for i := len(parts); i > 0; i-- {
-		prefix := strings.Join(parts[:i], ".")
-		if im.tableOIDs[prefix] {
+	if im.tableOIDs[oid] {
+		return true
+	}
+	for i := len(oid) - 1; i >= 0; i-- {
+		if oid[i] != '.' {
+			continue
+		}
+		if im.tableOIDs[oid[:i]] {
 			return true
 		}
 	}
 	return false
+}
+
+func searchOIDPosition(sortedOIDs []string, target string) int {
+	return sort.Search(len(sortedOIDs), func(i int) bool {
+		return !isOIDLess(sortedOIDs[i], target)
+	})
 }
 
 // buildTableOIDList builds an ordered list of all OIDs in a table

@@ -443,6 +443,31 @@ func TestLabLifecycle(t *testing.T) {
 	client.Do(req)
 }
 
+func TestShutdownCancelsAndCleansLabState(t *testing.T) {
+	rm := NewResourceManager()
+	called := false
+
+	rm.mu.Lock()
+	rm.labs["lab-1"] = &Lab{ID: "lab-1", Status: "running"}
+	rm.labSimulators["lab-1"] = nil
+	rm.labCancels["lab-1"] = func() { called = true }
+	rm.mu.Unlock()
+
+	rm.Shutdown()
+
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+	if !called {
+		t.Fatalf("expected cancel function to be called")
+	}
+	if status := rm.labs["lab-1"].Status; status != "stopped" {
+		t.Fatalf("lab status = %q, want %q", status, "stopped")
+	}
+	if len(rm.labSimulators) != 0 || len(rm.labCancels) != 0 {
+		t.Fatalf("expected simulator/cancel maps to be cleared")
+	}
+}
+
 // Test error cases
 func TestErrorCases(t *testing.T) {
 	server, _ := setupTestServer(t)
