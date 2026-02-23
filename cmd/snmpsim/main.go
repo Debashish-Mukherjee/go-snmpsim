@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/debashish-mukherjee/go-snmpsim/internal/api"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/engine"
@@ -152,7 +153,7 @@ func main() {
 	// Create API server
 	apiServer := api.NewServer(":" + *webPort)
 	apiServer.SetSimulator(simulator)
-	apiServer.SetSimulatorStatus(*portStart, *portEnd, *devices, *listenAddr, "just-started")
+	apiServer.SetSimulatorStatus(*portStart, *portEnd, *devices, *listenAddr, time.Now().Format(time.RFC3339))
 	apiServer.SetWorkloadManager(workloadManager)
 	apiServer.SetSNMPTester(webui.NewSNMPTester())
 

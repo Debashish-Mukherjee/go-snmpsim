@@ -31,7 +31,8 @@ Run focused regression tests for the recent correctness and stability fixes:
 ```bash
 GOCACHE=/tmp/go-build go test ./internal/store -run 'TestOIDIndexManager' -count=1
 GOCACHE=/tmp/go-build go test ./internal/agent -run 'TestHandlePacketUpdatesPollStatsConcurrently' -count=1
-GOCACHE=/tmp/go-build go test ./internal/api -run 'TestHandleSNMPTestWithoutTester|TestHandleWorkloadsWithoutManager|TestHandleStartStopLifecycle' -count=1
+GOCACHE=/tmp/go-build go test ./internal/api -run 'TestHandleSNMPTestWithoutTester|TestHandleWorkloadsWithoutManager|TestHandleStartStopLifecycle|TestHandleSNMPTestStartsAsyncJob|TestHandleTestJobWithoutTester|TestAPIMiddlewareAuth|TestAPIMiddlewareRateLimit' -count=1
+GOCACHE=/tmp/go-build go test ./internal/webui -run 'TestWorkloadManager' -count=1
 GOCACHE=/tmp/go-build go test ./cmd/snmpsim-api -run 'TestShutdownCancelsAndCleansLabState' -count=1
 ```
 

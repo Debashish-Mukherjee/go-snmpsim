@@ -3,10 +3,10 @@ package webui
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"time"
 )
@@ -39,6 +39,8 @@ type WorkloadManager struct {
 	workloads   map[string]*Workload
 }
 
+var workloadNamePattern = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+
 // NewWorkloadManager creates a new workload manager
 func NewWorkloadManager(dir ...string) *WorkloadManager {
 	workloadDir := "config/workloads"
@@ -67,8 +69,8 @@ func (wm *WorkloadManager) SaveWorkload(workload *Workload) error {
 	wm.mu.Lock()
 	defer wm.mu.Unlock()
 
-	if workload.Name == "" {
-		return fmt.Errorf("workload name is required")
+	if err := validateWorkloadName(workload.Name); err != nil {
+		return err
 	}
 
 	// Validate workload
@@ -83,13 +85,16 @@ func (wm *WorkloadManager) SaveWorkload(workload *Workload) error {
 	workload.UpdatedAt = now
 
 	// Save to disk
-	filePath := filepath.Join(wm.workloadDir, workload.Name+".json")
+	filePath, err := wm.workloadPath(workload.Name)
+	if err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(workload, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal workload: %v", err)
 	}
 
-	if err := ioutil.WriteFile(filePath, data, 0644); err != nil {
+	if err := os.WriteFile(filePath, data, 0644); err != nil {
 		return fmt.Errorf("failed to write workload file: %v", err)
 	}
 
@@ -105,6 +110,10 @@ func (wm *WorkloadManager) LoadWorkload(name string) (*Workload, error) {
 	wm.mu.RLock()
 	defer wm.mu.RUnlock()
 
+	if err := validateWorkloadName(name); err != nil {
+		return nil, err
+	}
+
 	workload, exists := wm.workloads[name]
 	if !exists {
 		return nil, fmt.Errorf("workload not found: %s", name)
@@ -118,9 +127,16 @@ func (wm *WorkloadManager) DeleteWorkload(name string) error {
 	wm.mu.Lock()
 	defer wm.mu.Unlock()
 
+	if err := validateWorkloadName(name); err != nil {
+		return err
+	}
+
 	delete(wm.workloads, name)
 
-	filePath := filepath.Join(wm.workloadDir, name+".json")
+	filePath, err := wm.workloadPath(name)
+	if err != nil {
+		return err
+	}
 	if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to delete workload file: %v", err)
 	}
@@ -144,7 +160,7 @@ func (wm *WorkloadManager) ListWorkloads() []Workload {
 
 // loadFromDisk loads all workload files from disk
 func (wm *WorkloadManager) loadFromDisk() {
-	files, err := ioutil.ReadDir(wm.workloadDir)
+	files, err := os.ReadDir(wm.workloadDir)
 	if err != nil {
 		log.Printf("Warning: Failed to read workload directory: %v", err)
 		return
@@ -158,7 +174,7 @@ func (wm *WorkloadManager) loadFromDisk() {
 		name := file.Name()[:len(file.Name())-5] // Remove .json
 
 		filePath := filepath.Join(wm.workloadDir, file.Name())
-		data, err := ioutil.ReadFile(filePath)
+		data, err := os.ReadFile(filePath)
 		if err != nil {
 			log.Printf("Warning: Failed to read workload file %s: %v", file.Name(), err)
 			continue
@@ -173,6 +189,33 @@ func (wm *WorkloadManager) loadFromDisk() {
 		wm.workloads[name] = &workload
 		log.Printf("Loaded workload: %s", name)
 	}
+}
+
+func validateWorkloadName(name string) error {
+	if name == "" {
+		return fmt.Errorf("workload name is required")
+	}
+	if !workloadNamePattern.MatchString(name) {
+		return fmt.Errorf("workload name must match %s", workloadNamePattern.String())
+	}
+	return nil
+}
+
+func (wm *WorkloadManager) workloadPath(name string) (string, error) {
+	base, err := filepath.Abs(wm.workloadDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve workload base path: %w", err)
+	}
+	filePath := filepath.Join(base, name+".json")
+	cleanPath := filepath.Clean(filePath)
+	rel, err := filepath.Rel(base, cleanPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve workload file path: %w", err)
+	}
+	if rel == ".." || len(rel) >= 3 && rel[:3] == ".."+string(filepath.Separator) {
+		return "", fmt.Errorf("invalid workload name")
+	}
+	return cleanPath, nil
 }
 
 // DefaultWorkloads returns a set of default workload templates

@@ -153,7 +153,9 @@ REST endpoints:
 - `GET /api/status` - Current simulator metrics
 - `POST /api/start` - Create and start a simulator instance with the provided parameters
 - `POST /api/stop` - Stop the active simulator instance and release listeners/resources
-- `POST /api/test/snmp` - Execute SNMP tests
+- `POST /api/test/snmp` - Start an asynchronous SNMP test job (returns `202` + `job_id`)
+- `GET /api/test/jobs/{id}` - Fetch live progress and final results for a job
+- `POST /api/test/jobs/{id}/cancel` - Cancel a running test job
 - `GET /api/workloads` - List saved workloads
 - `POST /api/workloads/save` - Save workload configuration
 - `GET /api/workloads/load` - Load workload by name
@@ -166,6 +168,8 @@ Behavior and error handling:
 - Invalid port ranges (for example, `port_end <= port_start`) return `400 Bad Request`
 - SNMP test endpoints return `503 Service Unavailable` if SNMP tester is not configured
 - Workload endpoints return `503 Service Unavailable` if workload manager is not configured
+- If `SNMPSIM_UI_API_TOKEN` is set, API requests must include `X-API-Token` or `Authorization: Bearer ...`
+- API rate limiting is enabled per client IP (`SNMPSIM_UI_RATE_LIMIT_PER_SEC`, default 60 requests/second)
 
 #### SNMP Tester (`internal/webui/snmp_tester.go`)
 
@@ -218,12 +222,12 @@ brew install net-snmp
 
 ## Security Considerations
 
-**MVP Limitations (v1.0):**
+**Current Implementation:**
 
-- No authentication/authorization
-- No HTTPS/TLS (should be added for production)
-- SNMP community string transmitted over HTTP
-- No rate limiting
+- Optional token auth via `SNMPSIM_UI_API_TOKEN`
+- Per-IP API rate limiting via `SNMPSIM_UI_RATE_LIMIT_PER_SEC`
+- No HTTPS/TLS by default (add reverse proxy/TLS in production)
+- SNMP community string is transmitted over HTTP API payloads
 
 **Recommendations for Production:**
 

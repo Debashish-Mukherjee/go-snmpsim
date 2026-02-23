@@ -4,15 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log"
+	"net"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/debashish-mukherjee/go-snmpsim/internal/engine"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/v3"
 	"github.com/debashish-mukherjee/go-snmpsim/internal/webui"
+	webstatic "github.com/debashish-mukherjee/go-snmpsim/web"
 )
 
 // Server handles HTTP API requests and WebSocket connections
@@ -22,6 +27,8 @@ type Server struct {
 	snmpTester      *webui.SNMPTester
 	httpServer      *http.Server
 	simCancel       context.CancelFunc
+	apiToken        string
+	limiter         *requestLimiter
 	mu              sync.RWMutex
 	status          *SimulatorStatus
 }
@@ -45,6 +52,8 @@ func NewServer(addr string) *Server {
 		status: &SimulatorStatus{
 			IsRunning: false,
 		},
+		apiToken: os.Getenv("SNMPSIM_UI_API_TOKEN"),
+		limiter:  newRequestLimiterFromEnv(),
 	}
 
 	mux := http.NewServeMux()
@@ -60,14 +69,23 @@ func NewServer(addr string) *Server {
 	mux.HandleFunc("/api/workloads/load", s.handleLoadWorkload)
 	mux.HandleFunc("/api/workloads/delete", s.handleDeleteWorkload)
 	mux.HandleFunc("/api/test/results", s.handleTestResults)
+	mux.HandleFunc("/api/test/jobs/", s.handleTestJob)
 
-	// Static files
-	mux.Handle("/", http.FileServer(http.Dir("./web/ui")))
-	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("./web/assets"))))
+	// Static files (embedded so they are independent of current working directory).
+	uiFS, err := fs.Sub(webstatic.EmbeddedFiles, "ui")
+	if err != nil {
+		panic(fmt.Sprintf("load embedded ui assets: %v", err))
+	}
+	assetsFS, err := fs.Sub(webstatic.EmbeddedFiles, "assets")
+	if err != nil {
+		panic(fmt.Sprintf("load embedded asset files: %v", err))
+	}
+	mux.Handle("/", http.FileServer(http.FS(uiFS)))
+	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assetsFS))))
 
 	s.httpServer = &http.Server{
 		Addr:    addr,
-		Handler: mux,
+		Handler: s.wrapMiddleware(mux),
 	}
 
 	return s
@@ -130,6 +148,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	status := *s.status
 	sim := s.simulator
+	tester := s.snmpTester
 	s.mu.RUnlock()
 
 	if sim != nil {
@@ -137,6 +156,16 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			if totalPolls, ok := stats["total_polls"].(int64); ok {
 				status.TotalPolls = totalPolls
 			}
+		}
+	}
+	if tester != nil {
+		if last := tester.GetLastResults(); last != nil && last.TotalTests > 0 {
+			status.AvgLatency = fmt.Sprintf("%.2f", last.AvgLatencyMs)
+		}
+	}
+	if status.IsRunning && status.StartTime != "" {
+		if startedAt, err := time.Parse(time.RFC3339, status.StartTime); err == nil {
+			status.Uptime = formatUptime(time.Since(startedAt))
 		}
 	}
 
@@ -333,11 +362,19 @@ func (s *Server) handleSNMPTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Run tests
-	results := tester.RunTests(&req)
+	job, err := tester.StartTests(&req)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to start tests: %v", err), http.StatusConflict)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(results)
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"job_id":  job.ID,
+		"status":  job.Status,
+		"message": "test job started",
+	})
 }
 
 // handleWorkloads returns list of saved workloads
@@ -469,4 +506,149 @@ func (s *Server) handleTestResults(w http.ResponseWriter, r *http.Request) {
 	results := tester.GetLastResults()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(results)
+}
+
+func (s *Server) handleTestJob(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.mu.RLock()
+	tester := s.snmpTester
+	s.mu.RUnlock()
+	if tester == nil {
+		http.Error(w, "SNMP tester not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	path := strings.TrimPrefix(r.URL.Path, "/api/test/jobs/")
+	path = strings.Trim(path, "/")
+	if path == "" {
+		http.Error(w, "job id required", http.StatusBadRequest)
+		return
+	}
+	parts := strings.Split(path, "/")
+	jobID := parts[0]
+
+	if r.Method == http.MethodPost {
+		if len(parts) != 2 || parts[1] != "cancel" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		if ok := tester.CancelJob(jobID); !ok {
+			http.Error(w, "job not running or not found", http.StatusConflict)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "canceling"})
+		return
+	}
+
+	if len(parts) != 1 {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	job, ok := tester.GetJob(jobID)
+	if !ok {
+		http.Error(w, "job not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(job)
+}
+
+func (s *Server) wrapMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			if s.apiToken != "" && !authorized(r, s.apiToken) {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			if s.limiter != nil && !s.limiter.Allow(clientIP(r)) {
+				http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func authorized(r *http.Request, token string) bool {
+	if token == "" {
+		return true
+	}
+	if r.Header.Get("X-API-Token") == token {
+		return true
+	}
+	authHeader := r.Header.Get("Authorization")
+	if strings.HasPrefix(authHeader, "Bearer ") && strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer ")) == token {
+		return true
+	}
+	return false
+}
+
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	if host == "" {
+		return "unknown"
+	}
+	return host
+}
+
+type requestLimiter struct {
+	mu          sync.Mutex
+	perSecond   int
+	clientState map[string]*clientRateState
+}
+
+type clientRateState struct {
+	epochSecond int64
+	count       int
+}
+
+func newRequestLimiterFromEnv() *requestLimiter {
+	limit := 60
+	if raw := strings.TrimSpace(os.Getenv("SNMPSIM_UI_RATE_LIMIT_PER_SEC")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	return &requestLimiter{perSecond: limit, clientState: make(map[string]*clientRateState)}
+}
+
+func (rl *requestLimiter) Allow(ip string) bool {
+	if rl == nil {
+		return true
+	}
+	if ip == "" {
+		ip = "unknown"
+	}
+	now := time.Now().Unix()
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	state, ok := rl.clientState[ip]
+	if !ok || state.epochSecond != now {
+		rl.clientState[ip] = &clientRateState{epochSecond: now, count: 1}
+		return true
+	}
+	if state.count >= rl.perSecond {
+		return false
+	}
+	state.count++
+	return true
+}
+
+func formatUptime(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	total := int(d.Seconds())
+	h := total / 3600
+	m := (total % 3600) / 60
+	s := total % 60
+	return fmt.Sprintf("%02dh %02dm %02ds", h, m, s)
 }

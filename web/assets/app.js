@@ -1,7 +1,6 @@
-// API Base URL
 const API_BASE = '/api';
+const RESULTS_PAGE_SIZE = 100;
 
-// Application State
 const appState = {
     isRunning: false,
     currentTab: 'dashboard',
@@ -10,9 +9,9 @@ const appState = {
     statusRefreshInterval: null,
     testProgressInterval: null,
     activeTest: null,
+    currentResultsPage: 1,
 };
 
-// Initialize app on page load
 document.addEventListener('DOMContentLoaded', () => {
     initializeTabs();
     initializeEventListeners();
@@ -22,63 +21,49 @@ document.addEventListener('DOMContentLoaded', () => {
     loadWorkloads();
 });
 
-// ===== TAB MANAGEMENT =====
 function initializeTabs() {
     document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const tabName = e.target.dataset.tab;
-            switchTab(tabName);
-        });
+        btn.addEventListener('click', (e) => switchTab(e.currentTarget.dataset.tab));
     });
 }
 
 function switchTab(tabName) {
-    // Hide all tabs
-    document.querySelectorAll('.tab-panel').forEach(panel => {
-        panel.classList.remove('active');
-    });
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.remove('active');
-    });
+    document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
 
-    // Show selected tab
-    document.getElementById(tabName).classList.add('active');
-    document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+    const panel = document.getElementById(tabName);
+    const tab = document.querySelector(`[data-tab="${tabName}"]`);
+    if (panel) panel.classList.add('active');
+    if (tab) tab.classList.add('active');
     appState.currentTab = tabName;
-
-    if (tabName === 'test' && appState.activeTest) {
-        updateTestStatus();
-    }
 }
 
-// ===== EVENT LISTENERS =====
 function initializeEventListeners() {
-    // Dashboard Controls
     document.getElementById('btn-start').addEventListener('click', startSimulator);
     document.getElementById('btn-stop').addEventListener('click', stopSimulator);
-
-    // Test Controls
     document.getElementById('btn-run-test').addEventListener('click', runTest);
+    document.getElementById('btn-cancel-test').addEventListener('click', cancelTest);
     document.getElementById('btn-clear-results').addEventListener('click', clearResults);
-
-    // Workload Controls
     document.getElementById('btn-save-workload').addEventListener('click', saveWorkload);
 
-    // Quick workload loading
     document.addEventListener('click', (e) => {
-        if (e.target.classList.contains('workload-quick-btn')) {
-            loadWorkloadAndSwitch(e.target.dataset.name);
+        const target = e.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (target.classList.contains('workload-quick-btn') || target.classList.contains('workload-load-btn')) {
+            loadWorkloadAndSwitch(target.dataset.name);
         }
-        if (e.target.classList.contains('workload-load-btn')) {
-            loadWorkloadAndSwitch(e.target.dataset.name);
+        if (target.classList.contains('workload-delete-btn')) {
+            deleteWorkload(target.dataset.name);
         }
-        if (e.target.classList.contains('workload-delete-btn')) {
-            deleteWorkload(e.target.dataset.name);
+        if (target.classList.contains('pagination-prev')) {
+            changeResultsPage(-1);
+        }
+        if (target.classList.contains('pagination-next')) {
+            changeResultsPage(1);
         }
     });
 }
 
-// ===== STATUS & MONITORING =====
 function startStatusRefresh() {
     appState.statusRefreshInterval = setInterval(refreshStatus, 2000);
 }
@@ -89,10 +74,34 @@ function stopStatusRefresh() {
     }
 }
 
+async function apiFetch(path, options = {}) {
+    const headers = new Headers(options.headers || {});
+    if (!headers.has('Content-Type') && options.body) {
+        headers.set('Content-Type', 'application/json');
+    }
+    const token = localStorage.getItem('snmpsim_api_token');
+    if (token) {
+        headers.set('X-API-Token', token);
+    }
+
+    const response = await fetch(`${API_BASE}${path}`, { ...options, headers });
+    if (!response.ok) {
+        let message = `${response.status} ${response.statusText}`;
+        const body = await response.text();
+        if (body) message = body;
+        throw new Error(message.trim());
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+        return response.json();
+    }
+    return response.text();
+}
+
 async function refreshStatus() {
     try {
-        const response = await fetch(`${API_BASE}/status`);
-        const status = await response.json();
+        const status = await apiFetch('/status');
         appState.lastStatus = status;
         updateStatusDisplay(status);
     } catch (error) {
@@ -105,40 +114,25 @@ function updateStatusDisplay(status) {
     const runButton = document.getElementById('btn-start');
     const stopButton = document.getElementById('btn-stop');
 
-    if (status.is_running) {
-        appState.isRunning = true;
-        statusBadge.textContent = 'Running';
-        statusBadge.className = 'badge badge-running';
-        runButton.disabled = true;
-        stopButton.disabled = false;
-    } else {
-        appState.isRunning = false;
-        statusBadge.textContent = 'Stopped';
-        statusBadge.className = 'badge badge-stopped';
-        runButton.disabled = false;
-        stopButton.disabled = true;
-    }
+    appState.isRunning = Boolean(status.is_running);
+    statusBadge.textContent = appState.isRunning ? 'Running' : 'Stopped';
+    statusBadge.className = appState.isRunning ? 'badge badge-running' : 'badge badge-stopped';
+    runButton.disabled = appState.isRunning;
+    stopButton.disabled = !appState.isRunning;
 
-    document.getElementById('status-devices').textContent = status.total_devices || 0;
-    document.getElementById('status-ports').textContent = status.port_start && status.port_end 
-        ? `${status.port_start}-${status.port_end}` 
-        : '-';
-    document.getElementById('status-address').textContent = status.listen_addr || '-';
-    document.getElementById('status-uptime').textContent = status.uptime || '-';
-    document.getElementById('status-polls').textContent = status.total_polls || 0;
-    document.getElementById('status-latency').textContent = status.avg_latency || '-';
+    setText('status-devices', status.total_devices || 0);
+    setText('status-ports', status.port_start !== 0 || status.port_end !== 0 ? `${status.port_start}-${status.port_end}` : '-');
+    setText('status-address', status.listen_addr || '-');
+    setText('status-uptime', status.uptime || '-');
+    setText('status-polls', status.total_polls || 0);
+    setText('status-latency', status.avg_latency_ms ? `${status.avg_latency_ms} ms` : '-');
 
     updateDashboardMetrics(appState.testResults);
 }
 
 async function refreshTestResults() {
     try {
-        const response = await fetch(`${API_BASE}/test/results`);
-        if (!response.ok) {
-            return;
-        }
-
-        const results = await response.json();
+        const results = await apiFetch('/test/results');
         if (results && results.total_tests) {
             appState.testResults = results;
             displayTestResults(results);
@@ -151,164 +145,166 @@ async function refreshTestResults() {
 
 function updateDashboardMetrics(results) {
     if (!results || !results.total_tests) {
-        document.getElementById('metric-success').textContent = '0';
-        document.getElementById('metric-failed').textContent = '0';
-        document.getElementById('metric-avg').textContent = '0ms';
-        document.getElementById('metric-rate').textContent = '0%';
+        setText('metric-success', '0');
+        setText('metric-failed', '0');
+        setText('metric-avg', '0ms');
+        setText('metric-rate', '0%');
         return;
     }
 
-    document.getElementById('metric-success').textContent = results.success_count || 0;
-    document.getElementById('metric-failed').textContent = results.failure_count || 0;
-    document.getElementById('metric-avg').textContent = `${(results.avg_latency_ms || 0).toFixed(2)}ms`;
-    document.getElementById('metric-rate').textContent = `${(results.success_rate || 0).toFixed(1)}%`;
+    setText('metric-success', results.success_count || 0);
+    setText('metric-failed', results.failure_count || 0);
+    setText('metric-avg', `${Number(results.avg_latency_ms || 0).toFixed(2)}ms`);
+    setText('metric-rate', `${Number(results.success_rate || 0).toFixed(1)}%`);
 }
 
-// ===== SIMULATOR CONTROL =====
 async function startSimulator() {
-    const portStart = parseInt(document.getElementById('config-port-start').value);
-    const portEnd = parseInt(document.getElementById('config-port-end').value);
-    const devices = parseInt(document.getElementById('config-devices').value);
-    const listenAddr = document.getElementById('config-listen').value;
+    const portStart = parseInt(document.getElementById('config-port-start').value, 10);
+    const portEnd = parseInt(document.getElementById('config-port-end').value, 10);
+    const devices = parseInt(document.getElementById('config-devices').value, 10);
+    const listenAddr = document.getElementById('config-listen').value.trim();
+    const snmprecFile = document.getElementById('config-snmprec').value.trim();
 
-    if (portStart >= portEnd) {
-        alert('Port start must be less than port end');
+    if (!Number.isInteger(portStart) || !Number.isInteger(portEnd) || portStart <= 0 || portEnd <= 0 || portStart >= portEnd) {
+        showNotification('Port range is invalid. Ensure port start < port end.', 'error');
+        return;
+    }
+    if (!Number.isInteger(devices) || devices < 1 || devices > 100000) {
+        showNotification('Device count must be between 1 and 100000.', 'error');
         return;
     }
 
     try {
-        const response = await fetch(`${API_BASE}/start`, {
+        const result = await apiFetch('/start', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 port_start: portStart,
                 port_end: portEnd,
-                devices: devices,
+                devices,
                 listen_addr: listenAddr,
+                snmprec_file: snmprecFile,
             }),
         });
-
-        if (!response.ok) {
-            throw new Error('Failed to start simulator');
-        }
-
-        const result = await response.json();
-        showNotification(result.message, 'success');
-        refreshStatus();
+        showNotification(result.message || 'Simulator started', 'success');
+        await refreshStatus();
     } catch (error) {
-        showNotification(`Error: ${error.message}`, 'error');
+        showNotification(`Start failed: ${error.message}`, 'error');
     }
 }
 
 async function stopSimulator() {
     try {
-        const response = await fetch(`${API_BASE}/stop`, { method: 'POST' });
-        if (!response.ok) {
-            throw new Error('Failed to stop simulator');
-        }
-
-        const result = await response.json();
-        showNotification(result.message, 'success');
-        refreshStatus();
+        const result = await apiFetch('/stop', { method: 'POST' });
+        showNotification(result.message || 'Simulator stopped', 'success');
+        await refreshStatus();
     } catch (error) {
-        showNotification(`Error: ${error.message}`, 'error');
+        showNotification(`Stop failed: ${error.message}`, 'error');
     }
 }
 
-// ===== SNMP TESTING =====
 async function runTest() {
     const testType = document.getElementById('test-type').value;
-    const oidsText = document.getElementById('test-oids').value;
-    const portStart = parseInt(document.getElementById('test-port-start').value);
-    const portEnd = parseInt(document.getElementById('test-port-end').value);
-    const community = document.getElementById('test-community').value;
-    const timeout = parseInt(document.getElementById('test-timeout').value);
-    const concurrency = parseInt(document.getElementById('test-concurrency').value);
-    const intervalSeconds = parseInt(document.getElementById('test-interval').value);
-    const durationSeconds = parseInt(document.getElementById('test-duration').value);
-    const maxRepeaters = parseInt(document.getElementById('test-repeaters').value);
+    const oids = parseOIDList(document.getElementById('test-oids').value);
+    const portStart = parseInt(document.getElementById('test-port-start').value, 10);
+    const portEnd = parseInt(document.getElementById('test-port-end').value, 10);
+    const community = document.getElementById('test-community').value.trim();
+    const timeout = parseInt(document.getElementById('test-timeout').value, 10);
+    const concurrency = parseInt(document.getElementById('test-concurrency').value, 10);
+    const intervalSeconds = parseInt(document.getElementById('test-interval').value, 10);
+    const durationSeconds = parseInt(document.getElementById('test-duration').value, 10);
+    const maxRepeaters = parseInt(document.getElementById('test-repeaters').value, 10);
 
-    if (!oidsText.trim()) {
-        alert('Please enter at least one OID');
+    if (!oids.length) {
+        showNotification('Enter at least one OID.', 'error');
+        return;
+    }
+    if (portEnd < portStart) {
+        showNotification('Test port range is invalid.', 'error');
         return;
     }
 
-    const oids = oidsText
-        .split('\n')
-        .map(oid => oid.trim())
-        .filter(oid => oid.length > 0);
-
     const statusDiv = document.getElementById('test-status');
     const runButton = document.getElementById('btn-run-test');
+    const cancelButton = document.getElementById('btn-cancel-test');
     const progressDiv = document.getElementById('live-progress');
     const liveResultsDiv = document.getElementById('last-results-window');
-    
-    statusDiv.className = 'test-status running';
-    runButton.disabled = true;
-    
-    // Show progress and live results panels
-    if (progressDiv) {
-        progressDiv.style.display = 'block';
-    }
-    if (liveResultsDiv) {
-        liveResultsDiv.style.display = 'block';
-    }
 
-    appState.activeTest = {
-        startTime: Date.now(),
-        durationSeconds: durationSeconds,
-        intervalSeconds: intervalSeconds,
-        portStart: portStart,
-        portEnd: portEnd,
-        oidsCount: oids.length,
-    };
-    startTestProgress();
+    statusDiv.className = 'test-status running';
+    statusDiv.textContent = 'Starting test job...';
+    runButton.disabled = true;
+    cancelButton.disabled = false;
+    if (progressDiv) progressDiv.style.display = 'block';
+    if (liveResultsDiv) liveResultsDiv.style.display = 'block';
 
     try {
-        const response = await fetch(`${API_BASE}/test/snmp`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                test_type: testType,
-                oids: oids,
-                port_start: portStart,
-                port_end: portEnd,
-                community: community,
-                timeout: timeout,
-                concurrency: concurrency,
-                interval_seconds: intervalSeconds,
-                duration_seconds: durationSeconds,
-                max_repeaters: maxRepeaters,
-            }),
-        });
-
-        if (!response.ok) {
-            throw new Error('Test execution failed');
+        const payload = {
+            test_type: testType,
+            oids,
+            port_start: portStart,
+            port_end: portEnd,
+            community,
+            timeout,
+            concurrency,
+            interval_seconds: intervalSeconds,
+            duration_seconds: durationSeconds,
+            max_repeaters: maxRepeaters,
+        };
+        const jobResp = await apiFetch('/test/snmp', { method: 'POST', body: JSON.stringify(payload) });
+        if (!jobResp.job_id) {
+            throw new Error('No job id returned by server');
         }
 
-        const results = await response.json();
-        appState.testResults = results;
-        displayTestResults(results);
-        updateDashboardMetrics(results);
-
-        statusDiv.textContent = `✅ Tests completed: ${results.success_count}/${results.total_tests} successful`;
-        statusDiv.className = 'test-status success';
+        appState.activeTest = { jobId: jobResp.job_id };
+        startTestProgressPolling(jobResp.job_id);
+        showNotification(`Test job started: ${jobResp.job_id}`, 'info');
     } catch (error) {
-        statusDiv.textContent = `❌ Error: ${error.message}`;
+        statusDiv.textContent = `Error: ${error.message}`;
         statusDiv.className = 'test-status error';
-        showNotification(`Test error: ${error.message}`, 'error');
-    } finally {
-        stopTestProgress();
         runButton.disabled = false;
+        cancelButton.disabled = true;
+        showNotification(`Test start failed: ${error.message}`, 'error');
     }
 }
 
-function startTestProgress() {
+function startTestProgressPolling(jobID) {
     stopTestProgress();
-    updateTestStatus();
+    appState.testProgressInterval = setInterval(async () => {
+        try {
+            const job = await apiFetch(`/test/jobs/${encodeURIComponent(jobID)}`);
+            updateTestProgressUI(job);
 
-    appState.testProgressInterval = setInterval(() => {
-        updateTestStatus();
+            if (job.status === 'completed' || job.status === 'failed' || job.status === 'canceled') {
+                stopTestProgress();
+                document.getElementById('btn-run-test').disabled = false;
+                document.getElementById('btn-cancel-test').disabled = true;
+                appState.activeTest = null;
+
+                if (job.results) {
+                    appState.testResults = job.results;
+                    displayTestResults(job.results);
+                    updateDashboardMetrics(job.results);
+                } else {
+                    await refreshTestResults();
+                }
+
+                const statusDiv = document.getElementById('test-status');
+                if (job.status === 'completed') {
+                    statusDiv.className = 'test-status success';
+                    statusDiv.textContent = `Completed: ${job.progress.success_count}/${job.progress.completed_jobs} successful`; 
+                    showNotification('Test job completed', 'success');
+                } else if (job.status === 'canceled') {
+                    statusDiv.className = 'test-status error';
+                    statusDiv.textContent = 'Test job canceled';
+                    showNotification('Test job canceled', 'info');
+                } else {
+                    statusDiv.className = 'test-status error';
+                    statusDiv.textContent = `Test job failed: ${job.error || 'unknown error'}`;
+                    showNotification('Test job failed', 'error');
+                }
+            }
+        } catch (error) {
+            console.error('Error polling job:', error);
+        }
     }, 1000);
 }
 
@@ -317,127 +313,144 @@ function stopTestProgress() {
         clearInterval(appState.testProgressInterval);
         appState.testProgressInterval = null;
     }
-    appState.activeTest = null;
 }
 
-function updateTestStatus() {
-    if (!appState.activeTest) {
+async function cancelTest() {
+    if (!appState.activeTest || !appState.activeTest.jobId) {
         return;
     }
-
-    const statusDiv = document.getElementById('test-status');
-    const now = Date.now();
-    const elapsedSec = Math.max(0, Math.floor((now - appState.activeTest.startTime) / 1000));
-    const durationSec = Math.max(1, appState.activeTest.durationSeconds || 1);
-    const intervalSec = Math.max(1, appState.activeTest.intervalSeconds || 5);
-    const totalIterations = Math.ceil(durationSec / intervalSec);
-    const currentIteration = Math.min(totalIterations, Math.floor(elapsedSec / intervalSec) + 1);
-    const remainingSec = Math.max(0, durationSec - elapsedSec);
-    const progressPercent = (currentIteration / totalIterations) * 100;
-
-    statusDiv.textContent = `⏳ Running tests... iter ${currentIteration}/${totalIterations} | elapsed ${formatDuration(elapsedSec)} | remaining ${formatDuration(remainingSec)}`;
-
-    // Update progress bar
-    const progressBar = document.getElementById('progress-fill');
-    const progressIter = document.getElementById('progress-iter');
-    const progressTime = document.getElementById('progress-elapsed');
-    const progressRemaining = document.getElementById('progress-remaining');
-
-    if (progressBar) {
-        progressBar.style.width = progressPercent + '%';
-    }
-    if (progressIter) {
-        progressIter.textContent = `Iter ${currentIteration}/${totalIterations}`;
-    }
-    if (progressTime) {
-        progressTime.textContent = `Elapsed: ${formatDuration(elapsedSec)}`;
-    }
-    if (progressRemaining) {
-        progressRemaining.textContent = `Remaining: ${formatDuration(remainingSec)}`;
-    }
-
-    // Calculate and update result rate
-    if (appState.testResults && appState.testResults.total_tests > 0) {
-        const resultsPerSecond = (appState.testResults.total_tests / Math.max(1, elapsedSec)).toFixed(1);
-        const progressRate = document.getElementById('progress-rate');
-        if (progressRate) {
-            progressRate.textContent = `Rate: ${resultsPerSecond}/s`;
-        }
-        
-        const progressSuccess = document.getElementById('progress-success');
-        if (progressSuccess) {
-            progressSuccess.textContent = `✅ ${appState.testResults.success_count}`;
-        }
+    try {
+        await apiFetch(`/test/jobs/${encodeURIComponent(appState.activeTest.jobId)}/cancel`, { method: 'POST' });
+        showNotification('Cancellation requested', 'info');
+    } catch (error) {
+        showNotification(`Cancel failed: ${error.message}`, 'error');
     }
 }
 
-function formatDuration(totalSeconds) {
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}m ${seconds}s`;
+function updateTestProgressUI(job) {
+    const statusDiv = document.getElementById('test-status');
+    const p = job.progress || {};
+    statusDiv.className = 'test-status running';
+    statusDiv.textContent = `Running... iter ${p.current_iteration || 0}/${p.total_iterations || 0} | ${p.completed_jobs || 0}/${p.total_jobs || 0} jobs`;
+
+    const total = Math.max(1, Number(p.total_jobs || 1));
+    const completed = Number(p.completed_jobs || 0);
+    const percent = Math.min(100, Math.round((completed / total) * 100));
+
+    const progressBar = document.getElementById('progress-fill');
+    const progressIter = document.getElementById('progress-iter');
+    const progressRate = document.getElementById('progress-rate');
+    const progressSuccess = document.getElementById('progress-success');
+    const progressElapsed = document.getElementById('progress-elapsed');
+    const progressRemaining = document.getElementById('progress-remaining');
+
+    if (progressBar) progressBar.style.width = `${percent}%`;
+    if (progressIter) progressIter.textContent = `Iter ${p.current_iteration || 0}/${p.total_iterations || 0}`;
+    if (progressRate) progressRate.textContent = `Rate: ${Number(p.rate_per_second || 0).toFixed(1)}/s`;
+    if (progressSuccess) progressSuccess.textContent = `✅ ${p.success_count || 0}`;
+    if (progressElapsed) progressElapsed.textContent = `Elapsed: ${formatDuration(p.elapsed_seconds || 0)}`;
+    if (progressRemaining) progressRemaining.textContent = `Remaining: ${formatDuration(p.remaining_seconds || 0)}`;
 }
 
 function displayTestResults(results) {
-    // Show results summary
+    appState.currentResultsPage = 1;
     const summaryDiv = document.getElementById('results-summary');
     summaryDiv.style.display = 'block';
 
-    document.getElementById('result-total').textContent = results.total_tests;
-    document.getElementById('result-success').textContent = results.success_count;
-    document.getElementById('result-failed').textContent = results.failure_count;
-    document.getElementById('result-rate').textContent = results.success_rate.toFixed(1) + '%';
-    document.getElementById('result-avg').textContent = results.avg_latency_ms.toFixed(2) + 'ms';
-    document.getElementById('result-min').textContent = results.min_latency_ms.toFixed(2) + 'ms';
-    document.getElementById('result-max').textContent = results.max_latency_ms.toFixed(2) + 'ms';
+    setText('result-total', results.total_tests || 0);
+    setText('result-success', results.success_count || 0);
+    setText('result-failed', results.failure_count || 0);
+    setText('result-rate', `${Number(results.success_rate || 0).toFixed(1)}%`);
+    setText('result-avg', `${Number(results.avg_latency_ms || 0).toFixed(2)}ms`);
+    setText('result-min', `${Number(results.min_latency_ms || 0).toFixed(2)}ms`);
+    setText('result-max', `${Number(results.max_latency_ms || 0).toFixed(2)}ms`);
 
-    // Show live results window (last 20 results)
     const liveResultsDiv = document.getElementById('last-results-window');
     if (liveResultsDiv) {
         liveResultsDiv.style.display = 'block';
-        updateLiveResultsTable(results.results);
+        updateLiveResultsTable(results.results || []);
     }
 
-    // Show results table
-    const tableDiv = document.getElementById('results-table-container');
-    const tbody = document.getElementById('results-tbody');
-    tableDiv.style.display = 'block';
+    document.getElementById('results-table-container').style.display = 'block';
     document.getElementById('results-empty').style.display = 'none';
+    renderResultsPage();
+}
 
+function renderResultsPage() {
+    const results = appState.testResults;
+    const tbody = document.getElementById('results-tbody');
+    const paginationDiv = document.getElementById('results-pagination');
     tbody.innerHTML = '';
-    results.results.forEach(result => {
-        const row = tbody.insertRow();
-        row.innerHTML = `
-            <td>${result.port}</td>
-            <td>${result.oid}</td>
-            <td class="${result.success ? 'success' : 'failure'}">
-                ${result.success ? '✅ Success' : '❌ Failed'}
-            </td>
-            <td>${result.value}</td>
-            <td>${result.type}</td>
-            <td>${result.latency_ms.toFixed(2)}</td>
-        `;
+
+    if (!results || !Array.isArray(results.results)) {
+        paginationDiv.textContent = '';
+        return;
+    }
+
+    const totalRows = results.results.length;
+    const totalPages = Math.max(1, Math.ceil(totalRows / RESULTS_PAGE_SIZE));
+    appState.currentResultsPage = Math.min(Math.max(1, appState.currentResultsPage), totalPages);
+
+    const start = (appState.currentResultsPage - 1) * RESULTS_PAGE_SIZE;
+    const pageRows = results.results.slice(start, start + RESULTS_PAGE_SIZE);
+
+    pageRows.forEach(result => {
+        const row = document.createElement('tr');
+        appendCell(row, result.port);
+        appendCell(row, result.oid);
+        appendStatusCell(row, Boolean(result.success));
+        appendCell(row, result.value || '');
+        appendCell(row, result.type || '');
+        appendCell(row, Number(result.latency_ms || 0).toFixed(2));
+        tbody.appendChild(row);
     });
+
+    paginationDiv.innerHTML = '';
+    const summary = document.createElement('div');
+    summary.textContent = `Showing ${start + 1}-${Math.min(totalRows, start + RESULTS_PAGE_SIZE)} of ${totalRows}`;
+
+    const controls = document.createElement('div');
+    controls.className = 'pagination-controls';
+    const prev = document.createElement('button');
+    prev.className = 'pagination-btn pagination-prev';
+    prev.disabled = appState.currentResultsPage <= 1;
+    prev.textContent = 'Prev';
+
+    const page = document.createElement('span');
+    page.textContent = `Page ${appState.currentResultsPage}/${totalPages}`;
+
+    const next = document.createElement('button');
+    next.className = 'pagination-btn pagination-next';
+    next.disabled = appState.currentResultsPage >= totalPages;
+    next.textContent = 'Next';
+
+    controls.appendChild(prev);
+    controls.appendChild(page);
+    controls.appendChild(next);
+
+    paginationDiv.appendChild(summary);
+    paginationDiv.appendChild(controls);
+}
+
+function changeResultsPage(direction) {
+    appState.currentResultsPage += direction;
+    renderResultsPage();
 }
 
 function updateLiveResultsTable(allResults) {
     const tbody = document.getElementById('live-results-tbody');
     if (!tbody) return;
 
-    // Get the last 20 results
-    const lastResults = allResults.slice(-20);
-    
     tbody.innerHTML = '';
+    const lastResults = allResults.slice(-20);
     lastResults.forEach(result => {
-        const row = tbody.insertRow();
-        row.innerHTML = `
-            <td>${result.port}</td>
-            <td>${result.oid}</td>
-            <td class="${result.success ? 'success' : 'failure'}">
-                ${result.success ? '✅' : '❌'}
-            </td>
-            <td>${result.value}</td>
-            <td>${result.latency_ms.toFixed(2)}ms</td>
-        `;
+        const row = document.createElement('tr');
+        appendCell(row, result.port);
+        appendCell(row, result.oid);
+        appendCompactStatusCell(row, Boolean(result.success));
+        appendCell(row, result.value || '');
+        appendCell(row, `${Number(result.latency_ms || 0).toFixed(2)}ms`);
+        tbody.appendChild(row);
     });
 }
 
@@ -446,168 +459,151 @@ function clearResults() {
     document.getElementById('results-table-container').style.display = 'none';
     document.getElementById('results-empty').style.display = 'block';
     document.getElementById('test-status').textContent = '';
-    
     const progressDiv = document.getElementById('live-progress');
-    if (progressDiv) {
-        progressDiv.style.display = 'none';
-    }
-    
+    if (progressDiv) progressDiv.style.display = 'none';
     const liveResultsDiv = document.getElementById('last-results-window');
-    if (liveResultsDiv) {
-        liveResultsDiv.style.display = 'none';
-    }
-    
+    if (liveResultsDiv) liveResultsDiv.style.display = 'none';
+
     appState.testResults = null;
+    appState.activeTest = null;
     updateDashboardMetrics(null);
 }
 
-// ===== WORKLOAD MANAGEMENT =====
 async function loadWorkloads() {
     try {
-        const response = await fetch(`${API_BASE}/workloads`);
-        const workloads = await response.json();
-
-        // Update quick workload list
-        const quickList = document.getElementById('workload-list');
-        quickList.innerHTML = '';
-
-        if (workloads && workloads.length > 0) {
-            workloads.forEach(w => {
-                const btn = document.createElement('button');
-                btn.className = 'workload-quick-btn';
-                btn.dataset.name = w.name;
-                btn.innerHTML = `
-                    <div>
-                        <strong>${w.name}</strong>
-                        <div style="font-size: 0.8rem; color: #6b7280;">${w.description}</div>
-                    </div>
-                `;
-                quickList.appendChild(btn);
-            });
-        } else {
-            quickList.innerHTML = '<p style="color: #6b7280; text-align: center;">No saved workloads</p>';
-        }
-
-        // Update workload list in workloads tab
-        const workloadList = document.getElementById('saved-workloads');
-        workloadList.innerHTML = '';
-
-        if (workloads && workloads.length > 0) {
-            workloads.forEach(w => {
-                const item = document.createElement('div');
-                item.className = 'workload-item';
-                item.innerHTML = `
-                    <div>
-                        <strong>${w.name}</strong>
-                        <div style="font-size: 0.8rem; color: #6b7280;">${w.description}</div>
-                    </div>
-                    <div class="workload-actions">
-                        <button class="workload-load-btn" data-name="${w.name}">📂 Load</button>
-                        <button class="workload-delete-btn" data-name="${w.name}">🗑️ Delete</button>
-                    </div>
-                `;
-                workloadList.appendChild(item);
-            });
-        } else {
-            workloadList.innerHTML = '<p style="color: #6b7280; text-align: center;">No saved workloads</p>';
-        }
+        const workloads = await apiFetch('/workloads');
+        renderWorkloadLists(Array.isArray(workloads) ? workloads : []);
     } catch (error) {
-        console.error('Error loading workloads:', error);
+        renderWorkloadLists([]);
+        showNotification(`Failed to load workloads: ${error.message}`, 'error');
     }
+}
+
+function renderWorkloadLists(workloads) {
+    const quickList = document.getElementById('workload-list');
+    const workloadList = document.getElementById('saved-workloads');
+    quickList.innerHTML = '';
+    workloadList.innerHTML = '';
+
+    if (!workloads.length) {
+        const emptyQuick = document.createElement('p');
+        emptyQuick.style.color = '#6b7280';
+        emptyQuick.style.textAlign = 'center';
+        emptyQuick.textContent = 'No saved workloads';
+        quickList.appendChild(emptyQuick);
+
+        const empty = emptyQuick.cloneNode(true);
+        workloadList.appendChild(empty);
+        return;
+    }
+
+    workloads.forEach(w => {
+        const quick = document.createElement('button');
+        quick.className = 'workload-quick-btn';
+        quick.dataset.name = w.name;
+        const quickTitle = document.createElement('strong');
+        quickTitle.textContent = w.name;
+        const quickDesc = document.createElement('div');
+        quickDesc.style.fontSize = '0.8rem';
+        quickDesc.style.color = '#6b7280';
+        quickDesc.textContent = w.description || '';
+        quick.appendChild(quickTitle);
+        quick.appendChild(quickDesc);
+        quickList.appendChild(quick);
+
+        const item = document.createElement('div');
+        item.className = 'workload-item';
+        const left = document.createElement('div');
+        const title = document.createElement('strong');
+        title.textContent = w.name;
+        const desc = document.createElement('div');
+        desc.style.fontSize = '0.8rem';
+        desc.style.color = '#6b7280';
+        desc.textContent = w.description || '';
+        left.appendChild(title);
+        left.appendChild(desc);
+
+        const actions = document.createElement('div');
+        actions.className = 'workload-actions';
+        const load = document.createElement('button');
+        load.className = 'workload-load-btn';
+        load.dataset.name = w.name;
+        load.textContent = 'Load';
+        const del = document.createElement('button');
+        del.className = 'workload-delete-btn';
+        del.dataset.name = w.name;
+        del.textContent = 'Delete';
+
+        actions.appendChild(load);
+        actions.appendChild(del);
+        item.appendChild(left);
+        item.appendChild(actions);
+        workloadList.appendChild(item);
+    });
 }
 
 async function saveWorkload() {
     const name = document.getElementById('workload-name').value.trim();
     const description = document.getElementById('workload-description').value.trim();
-
-    if (!name) {
-        alert('Please enter a workload name');
+    if (!/^[a-zA-Z0-9._-]+$/.test(name)) {
+        showNotification('Workload name must use letters, numbers, dot, underscore, or dash.', 'error');
         return;
     }
 
-    const testType = document.getElementById('test-type').value;
-    const oidsText = document.getElementById('test-oids').value;
-    const portStart = parseInt(document.getElementById('test-port-start').value);
-    const portEnd = parseInt(document.getElementById('test-port-end').value);
-    const community = document.getElementById('test-community').value;
-    const timeout = parseInt(document.getElementById('test-timeout').value);
-    const concurrency = parseInt(document.getElementById('test-concurrency').value);
-    const intervalSeconds = parseInt(document.getElementById('test-interval').value);
-    const durationSeconds = parseInt(document.getElementById('test-duration').value);
-
-    const oids = oidsText
-        .split('\n')
-        .map(oid => oid.trim())
-        .filter(oid => oid.length > 0);
-
-    if (oids.length === 0) {
-        alert('Please configure at least one OID');
+    const oids = parseOIDList(document.getElementById('test-oids').value);
+    if (!oids.length) {
+        showNotification('Configure at least one OID before saving.', 'error');
         return;
     }
 
     try {
-        const response = await fetch(`${API_BASE}/workloads/save`, {
+        await apiFetch('/workloads/save', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                name: name,
-                description: description,
-                test_type: testType,
-                oids: oids,
-                port_start: portStart,
-                port_end: portEnd,
-                community: community,
-                timeout: timeout,
-                concurrency: concurrency,
-                interval_seconds: intervalSeconds,
-                duration_seconds: durationSeconds,
+                name,
+                description,
+                test_type: document.getElementById('test-type').value,
+                oids,
+                port_start: parseInt(document.getElementById('test-port-start').value, 10),
+                port_end: parseInt(document.getElementById('test-port-end').value, 10),
+                community: document.getElementById('test-community').value.trim(),
+                timeout: parseInt(document.getElementById('test-timeout').value, 10),
+                concurrency: parseInt(document.getElementById('test-concurrency').value, 10),
+                interval_seconds: parseInt(document.getElementById('test-interval').value, 10),
+                duration_seconds: parseInt(document.getElementById('test-duration').value, 10),
+                max_repeaters: parseInt(document.getElementById('test-repeaters').value, 10),
+                snmprec_file: document.getElementById('test-snmprec-file').value.trim(),
             }),
         });
 
-        if (!response.ok) {
-            throw new Error('Failed to save workload');
-        }
-
-        showNotification('Workload saved successfully!', 'success');
+        showNotification('Workload saved successfully.', 'success');
         document.getElementById('workload-name').value = '';
         document.getElementById('workload-description').value = '';
-        loadWorkloads();
+        await loadWorkloads();
     } catch (error) {
-        showNotification(`Error saving workload: ${error.message}`, 'error');
+        showNotification(`Save workload failed: ${error.message}`, 'error');
     }
 }
 
 async function loadWorkloadAndSwitch(name) {
     try {
-        const response = await fetch(`${API_BASE}/workloads/load?name=${encodeURIComponent(name)}`);
-        if (!response.ok) {
-            throw new Error('Failed to load workload');
-        }
+        const workload = await apiFetch(`/workloads/load?name=${encodeURIComponent(name)}`);
+        document.getElementById('test-type').value = workload.test_type || 'get';
+        document.getElementById('test-oids').value = (workload.oids || []).join('\n');
+        document.getElementById('test-port-start').value = workload.port_start || 20000;
+        document.getElementById('test-port-end').value = workload.port_end || 20009;
+        document.getElementById('test-community').value = workload.community || 'public';
+        document.getElementById('test-timeout').value = workload.timeout || 5;
+        document.getElementById('test-concurrency').value = workload.concurrency || 20;
+        document.getElementById('test-interval').value = workload.interval_seconds || 5;
+        document.getElementById('test-duration').value = workload.duration_seconds || 60;
+        document.getElementById('test-repeaters').value = workload.max_repeaters || 10;
+        document.getElementById('test-snmprec-file').value = workload.snmprec_file || '';
 
-        const workload = await response.json();
-
-        // Populate test configuration
-        document.getElementById('test-type').value = workload.test_type;
-        document.getElementById('test-oids').value = workload.oids.join('\n');
-        document.getElementById('test-port-start').value = workload.port_start;
-        document.getElementById('test-port-end').value = workload.port_end;
-        document.getElementById('test-community').value = workload.community;
-        document.getElementById('test-timeout').value = workload.timeout;
-        if (workload.concurrency) {
-            document.getElementById('test-concurrency').value = workload.concurrency;
-        }
-        if (workload.interval_seconds) {
-            document.getElementById('test-interval').value = workload.interval_seconds;
-        }
-        if (workload.duration_seconds) {
-            document.getElementById('test-duration').value = workload.duration_seconds;
-        }
-
-        // Switch to test tab
         switchTab('test');
         showNotification(`Loaded workload: ${name}`, 'success');
     } catch (error) {
-        showNotification(`Error loading workload: ${error.message}`, 'error');
+        showNotification(`Load workload failed: ${error.message}`, 'error');
     }
 }
 
@@ -617,30 +613,68 @@ async function deleteWorkload(name) {
     }
 
     try {
-        const response = await fetch(`${API_BASE}/workloads/delete?name=${encodeURIComponent(name)}`, {
-            method: 'DELETE',
-        });
-
-        if (!response.ok) {
-            throw new Error('Failed to delete workload');
-        }
-
+        await apiFetch(`/workloads/delete?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
         showNotification('Workload deleted', 'success');
-        loadWorkloads();
+        await loadWorkloads();
     } catch (error) {
-        showNotification(`Error deleting workload: ${error.message}`, 'error');
+        showNotification(`Delete workload failed: ${error.message}`, 'error');
     }
 }
 
-// ===== UTILITIES =====
-function showNotification(message, type) {
-    // Simple notification (could be enhanced with a toast library)
-    console.log(`[${type.toUpperCase()}] ${message}`);
-    
-    // You could implement a toast notification here
+function appendCell(row, text) {
+    const td = document.createElement('td');
+    td.textContent = text == null ? '' : String(text);
+    row.appendChild(td);
 }
 
-// Cleanup on page unload
+function appendStatusCell(row, success) {
+    const td = document.createElement('td');
+    td.className = success ? 'success' : 'failure';
+    td.textContent = success ? 'Success' : 'Failed';
+    row.appendChild(td);
+}
+
+function appendCompactStatusCell(row, success) {
+    const td = document.createElement('td');
+    td.className = success ? 'success' : 'failure';
+    td.textContent = success ? 'OK' : 'ERR';
+    row.appendChild(td);
+}
+
+function parseOIDList(text) {
+    return text
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean);
+}
+
+function formatDuration(totalSeconds) {
+    const sec = Math.max(0, Number(totalSeconds || 0));
+    const minutes = Math.floor(sec / 60);
+    const seconds = sec % 60;
+    return `${minutes}m ${seconds}s`;
+}
+
+function setText(id, value) {
+    const node = document.getElementById(id);
+    if (node) node.textContent = String(value);
+}
+
+function showNotification(message, type) {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        toast.remove();
+    }, 4000);
+}
+
 window.addEventListener('beforeunload', () => {
     stopStatusRefresh();
+    stopTestProgress();
 });
